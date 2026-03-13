@@ -5,6 +5,9 @@ from typing import Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 import pandas as pd
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -217,27 +220,125 @@ Be precise and use standard indicator notation. Return only the JSON object.
             raise ValueError(f"Failed to parse LLM response as JSON: {e}")
 
 
+class GroqProvider(LLMProvider):
+    """Groq API provider for strategy parsing."""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize Groq provider.
+        
+        Args:
+            api_key: Groq API key (defaults to GROQ_API_KEY env var)
+        """
+        self.api_key = api_key or os.getenv('GROQ_API_KEY')
+        if not self.api_key:
+            raise ValueError("GROQ_API_KEY not provided or set in environment")
+        
+        try:
+            from groq import Groq
+            self.client = Groq(api_key=self.api_key)
+        except ImportError:
+            raise ImportError("groq package not installed. Install with: pip install groq")
+    
+    def parse_strategy(self, strategy_text: str) -> StrategyRules:
+        """
+        Parse strategy text using Groq API.
+        
+        Args:
+            strategy_text: Natural language strategy description
+            
+        Returns:
+            StrategyRules object with parsed conditions
+        """
+        prompt = self._build_prompt(strategy_text)
+        
+        response = self.client.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            messages=[
+                {"role": "system", "content": "You are a trading strategy expert. Extract trading rules from natural language descriptions and return valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        
+        response_text = response.choices[0].message.content
+        return self._parse_response(response_text)
+    
+    def _build_prompt(self, strategy_text: str) -> str:
+        """Build the prompt for Groq."""
+        return f"""
+Extract trading rules from the following strategy description and return a JSON object.
+
+Strategy: {strategy_text}
+
+Return ONLY a valid JSON object with this exact structure (no markdown, no extra text):
+{{
+    "buy_condition": "condition description",
+    "sell_condition": "condition description",
+    "indicators_required": ["list", "of", "indicators"],
+    "parameters": {{
+        "rsi_period": 14,
+        "ma_short": 50,
+        "ma_long": 200,
+        "other_params": "as needed"
+    }}
+}}
+
+Supported indicators: RSI, SMA, EMA, MACD, Bollinger Bands, ATR, Stochastic, ADX, HIGH, LOW, VOLUME
+Supported operators: <, >, <=, >=, ==, !=, and, or, not
+
+Examples:
+- "RSI < 30" for oversold
+- "RSI > 70" for overbought
+- "SMA(50) > SMA(200)" for moving average crossover
+- "MACD > Signal" for MACD crossover
+- "Price > Bollinger Upper Band" for breakout
+- "Price breaks above 20 day high with high volume" for breakout with volume confirmation
+- "Price drops below 20 day moving average" for support break
+
+Be precise and use standard indicator notation. Return only the JSON object.
+"""
+    
+    def _parse_response(self, response_text: str) -> StrategyRules:
+        """Parse JSON response from Groq."""
+        try:
+            # Extract JSON from response (in case there's extra text)
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if not json_match:
+                raise ValueError("No JSON found in response")
+            
+            json_str = json_match.group(0)
+            data = json.loads(json_str)
+            
+            return StrategyRules(
+                buy_condition=data.get('buy_condition', ''),
+                sell_condition=data.get('sell_condition', ''),
+                indicators_required=data.get('indicators_required', []),
+                parameters=data.get('parameters', {})
+            )
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse LLM response as JSON: {e}")
+
+
 class StrategyParser:
     """
     Parse natural language trading strategies into structured rules.
     
-    Supports both OpenAI and Google Gemini APIs for NLP processing.
+    Uses Groq API for NLP processing (primary provider).
     """
     
-    def __init__(self, provider: str = 'openai', api_key: Optional[str] = None):
+    def __init__(self, provider: str = 'groq', api_key: Optional[str] = None):
         """
         Initialize strategy parser.
         
         Args:
-            provider: 'openai' or 'gemini'
+            provider: 'groq' (default and only supported provider)
             api_key: API key for the provider
         """
-        if provider.lower() == 'openai':
-            self.provider = OpenAIProvider(api_key)
-        elif provider.lower() == 'gemini':
-            self.provider = GeminiProvider(api_key)
+        if provider.lower() == 'groq':
+            self.provider = GroqProvider(api_key)
         else:
-            raise ValueError(f"Unknown provider: {provider}. Use 'openai' or 'gemini'")
+            raise ValueError(f"Unknown provider: {provider}. Only 'groq' is supported")
     
     def parse(self, strategy_text: str) -> StrategyRules:
         """
@@ -276,6 +377,107 @@ class StrategyParser:
         """
         rules = self.parse(strategy_text)
         return rules.to_dict()
+
+
+class DSLConverter:
+    """Convert natural language strategies to DSL format."""
+    
+    # Forbidden keywords that should never appear in strategies
+    # NOTE: Removed trading terms like 'drop', 'delete', 'high', 'volume' - these are legitimate
+    FORBIDDEN_KEYWORDS = {
+        'import', 'from', 'exec', 'eval', '__import__',
+        'os', 'sys', 'subprocess', 'socket', 'requests',
+        'urllib', 'http', 'ftp', 'ssh', 'password', 'secret', 'token', 'key',
+        'credential', 'database', 'db', 'sql', 'query', 'table', 'column',
+        'file', 'directory', 'path', 'system', 'command', 'shell', 'bash',
+        'python', 'code', 'script', 'function', 'class', 'lambda', 'def'
+    }
+    
+    @staticmethod
+    def to_dsl(strategy_text: str) -> str:
+        """
+        Convert natural language strategy to DSL format.
+        
+        Args:
+            strategy_text: Natural language strategy
+            
+        Returns:
+            DSL formatted strategy
+            
+        Raises:
+            ValueError: If forbidden keywords are detected
+        """
+        # Security check: detect forbidden keywords
+        text_lower = strategy_text.lower()
+        for keyword in DSLConverter.FORBIDDEN_KEYWORDS:
+            if keyword in text_lower:
+                raise ValueError(f"Security violation: Forbidden keyword '{keyword}' detected in strategy")
+        
+        # Extract buy and sell conditions
+        buy_match = re.search(r'buy\s+(?:when|if)?\s*(.+?)(?=sell|$)', strategy_text, re.IGNORECASE)
+        sell_match = re.search(r'sell\s+(?:when|if)?\s*(.+?)(?=buy|$)', strategy_text, re.IGNORECASE)
+        
+        buy_condition = buy_match.group(1).strip() if buy_match else ""
+        sell_condition = sell_match.group(1).strip() if sell_match else ""
+        
+        # Normalize conditions
+        buy_condition = DSLConverter._normalize_condition(buy_condition)
+        sell_condition = DSLConverter._normalize_condition(sell_condition)
+        
+        # Build DSL
+        dsl = "strategy {\n"
+        if buy_condition:
+            dsl += f"  buy: {buy_condition}\n"
+        if sell_condition:
+            dsl += f"  sell: {sell_condition}\n"
+        dsl += "}"
+        
+        return dsl
+    
+    @staticmethod
+    def _normalize_condition(condition: str) -> str:
+        """Normalize condition text to DSL format."""
+        # Replace common patterns
+        condition = re.sub(r'\bcrosses?\s+below\b', '<', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\bcrosses?\s+above\b', '>', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\bbelow\b', '<', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\babove\b', '>', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\boversold\b', '< 30', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\boverbought\b', '> 70', condition, flags=re.IGNORECASE)
+        
+        # Handle "20 day high" -> "HIGH(20)"
+        condition = re.sub(r'(\d+)\s*day\s+high', r'HIGH(\1)', condition, flags=re.IGNORECASE)
+        # Handle "20 day low" -> "LOW(20)"
+        condition = re.sub(r'(\d+)\s*day\s+low', r'LOW(\1)', condition, flags=re.IGNORECASE)
+        # Handle "20 day moving average" -> "SMA(20)"
+        condition = re.sub(r'(\d+)\s*day\s+(?:moving\s+)?average', r'SMA(\1)', condition, flags=re.IGNORECASE)
+        # Handle "20 day EMA" -> "EMA(20)"
+        condition = re.sub(r'(\d+)\s*day\s+EMA', r'EMA(\1)', condition, flags=re.IGNORECASE)
+        # Handle "20 day SMA" -> "SMA(20)"
+        condition = re.sub(r'(\d+)\s*day\s+SMA', r'SMA(\1)', condition, flags=re.IGNORECASE)
+        
+        # Handle volume conditions - PRESERVE them instead of removing
+        # "with high volume" -> "AND VOLUME"
+        condition = re.sub(r'\s+with\s+high\s+volume', ' AND VOLUME', condition, flags=re.IGNORECASE)
+        # "and high volume" -> "AND VOLUME"
+        condition = re.sub(r'\s+and\s+high\s+volume', ' AND VOLUME', condition, flags=re.IGNORECASE)
+        # "with low volume" -> "AND NOT VOLUME"
+        condition = re.sub(r'\s+with\s+low\s+volume', ' AND NOT VOLUME', condition, flags=re.IGNORECASE)
+        # "and low volume" -> "AND NOT VOLUME"
+        condition = re.sub(r'\s+and\s+low\s+volume', ' AND NOT VOLUME', condition, flags=re.IGNORECASE)
+        # "with increasing volume" -> "AND VOLUME"
+        condition = re.sub(r'\s+with\s+increasing\s+volume', ' AND VOLUME', condition, flags=re.IGNORECASE)
+        # "with decreasing volume" -> "AND NOT VOLUME"
+        condition = re.sub(r'\s+with\s+decreasing\s+volume', ' AND NOT VOLUME', condition, flags=re.IGNORECASE)
+        
+        # Replace logical operators
+        condition = re.sub(r'\band\b', 'AND', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\bor\b', 'OR', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\bnot\b', 'NOT', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\bprice\b', 'PRICE', condition, flags=re.IGNORECASE)
+        condition = re.sub(r'\bclose\b', 'CLOSE', condition, flags=re.IGNORECASE)
+        
+        return condition.strip()
 
 
 class SimpleStrategyParser:

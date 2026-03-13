@@ -6,9 +6,11 @@ from typing import Optional, Dict, Any
 from models.request_models import BacktestRequest, ImproveStrategyRequest
 from models.response_models import BacktestResponse, Trade, EquityCurvePoint, BacktestMetrics
 from services.data_fetcher import get_stock_data
-from services.strategy_parser import SimpleStrategyParser, StrategyParser
+from services.strategy_parser import SimpleStrategyParser, StrategyParser, DSLConverter
 from services.indicators import add_all_indicators
 from services.backtest_engine import BacktestEngine
+from services.dsl_sandbox import SandboxExecutor
+from services.dsl_parser import parse_dsl
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -50,11 +52,7 @@ async def run_backtest(request: BacktestRequest):
     try:
         logger.info(f"Starting backtest for {request.stock_symbol}")
         
-        # Step 1: Parse strategy
-        logger.info(f"Parsing strategy: {request.strategy_text[:50]}...")
-        strategy_rules = _parse_strategy(request.strategy_text)
-        
-        # Step 2: Fetch historical data
+        # Step 1: Fetch historical data
         logger.info(f"Fetching data for {request.stock_symbol} from {request.start_date} to {request.end_date}")
         df = get_stock_data(
             request.stock_symbol,
@@ -67,15 +65,86 @@ async def run_backtest(request: BacktestRequest):
         
         logger.info(f"Fetched {len(df)} days of data")
         
-        # Step 3: Calculate indicators
+        # Step 2: Calculate indicators
         logger.info("Calculating technical indicators")
         df = add_all_indicators(df)
         
-        # Step 4: Generate buy/sell signals from parsed strategy
-        logger.info("Generating trading signals")
-        buy_condition, sell_condition = _generate_signals(df, strategy_rules)
+        # Step 3: Parse strategy and generate signals using smart routing
+        logger.info(f"Parsing strategy: {request.strategy_text[:50]}...")
         
-        # Step 5: Run backtest
+        # SECURITY CHECK: Detect malicious patterns before processing
+        malicious_patterns = [
+            'import ', 'from ', 'exec(', 'eval(', '__import__',
+            'os.system', 'os.remove', 'os.rmdir', 'os.unlink',
+            'subprocess.', 'socket.', 'requests.', 'urllib.',
+            'open(', '.read(', '.write(', '.delete(',
+            'drop table', 'delete from', 'truncate',
+            '__getattr__', '__setattr__', '__delattr__',
+            'globals(', 'locals(', 'vars(', 'dir(',
+            'compile(', 'getattr(', 'setattr(', 'delattr(',
+            'lambda:', 'def ', 'class ', 'import',
+            'password =', 'secret =', 'token =', 'key =',
+            'db_password', 'db_secret', 'api_key', 'api_secret'
+        ]
+        
+        strategy_lower = request.strategy_text.lower()
+        for pattern in malicious_patterns:
+            if pattern in strategy_lower:
+                logger.error(f"SECURITY VIOLATION: Malicious pattern detected: {pattern}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Security violation: Malicious pattern detected in strategy. Pattern: '{pattern}' is not allowed."
+                )
+        
+        # SMART ROUTING: Detect complex keywords to decide which parser to use
+        complex_keywords = [
+            'break', 'breakout', 'cross', 'crosses', 'touch', 'touches',
+            'volume', 'high volume', 'low volume', 'increasing volume', 'decreasing volume',
+            'support', 'resistance', 'trend', 'momentum', 'divergence',
+            'confirmation', 'filter', 'condition'
+        ]
+        
+        is_complex_strategy = any(keyword in strategy_lower for keyword in complex_keywords)
+        
+        try:
+            if is_complex_strategy:
+                # Complex strategy → Use Groq LLM parser (primary provider)
+                logger.info("🧠 Complex strategy detected, using Groq LLM parser for better understanding")
+                strategy_rules = _parse_strategy(request.strategy_text)
+                buy_condition, sell_condition = _generate_signals(df, strategy_rules)
+                logger.info("✅ Using Groq LLM parser (SMART ROUTING - COMPLEX)")
+            else:
+                # Simple strategy → Use DSL (fast and secure)
+                logger.info("⚡ Simple strategy detected, using DSL parser for speed")
+                dsl_text = DSLConverter.to_dsl(request.strategy_text)
+                logger.info(f"Converted to DSL: {dsl_text[:100]}...")
+                
+                strategy_ast = parse_dsl(dsl_text)
+                sandbox = SandboxExecutor(df)
+                buy_condition, sell_condition = sandbox.execute(strategy_ast)
+                logger.info("✅ Using DSL sandbox executor (SMART ROUTING - SIMPLE)")
+        
+        except Exception as e:
+            logger.error(f"Parser execution failed: {str(e)}")
+            # Only fallback if it's a parsing error, not a security error
+            if "not allowed" in str(e).lower() or "security" in str(e).lower():
+                raise HTTPException(status_code=400, detail=str(e))
+            
+            # If DSL failed, try Groq as fallback
+            if not is_complex_strategy:
+                logger.warning(f"DSL failed, falling back to Groq LLM parser: {str(e)}")
+                try:
+                    strategy_rules = _parse_strategy(request.strategy_text)
+                    buy_condition, sell_condition = _generate_signals(df, strategy_rules)
+                    logger.info("✅ Using Groq LLM parser (FALLBACK FROM DSL)")
+                except Exception as llm_error:
+                    logger.error(f"Groq parser also failed: {str(llm_error)}")
+                    raise HTTPException(status_code=400, detail=f"Failed to parse strategy: {str(llm_error)}")
+            else:
+                logger.error(f"Groq parser failed: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"Failed to parse strategy: {str(e)}")
+        
+        # Step 4: Run backtest
         logger.info("Running backtest engine")
         engine = BacktestEngine(
             df,
@@ -419,22 +488,14 @@ async def improve_strategy(request: ImproveStrategyRequest):
         
         from services.strategy_improver import StrategyImprover
         
-        # Try Groq first, then OpenAI, then Gemini
-        improver = None
-        providers = ['groq', 'openai', 'gemini']
-        
-        for provider in providers:
-            try:
-                improver = StrategyImprover(provider=provider)
-                logger.info(f"Using {provider} for strategy improvement")
-                break
-            except ValueError as e:
-                logger.debug(f"{provider} not available: {str(e)}")
-                continue
-        
-        if improver is None:
+        # Use Groq as the primary (and only) provider
+        try:
+            improver = StrategyImprover(provider='groq')
+            logger.info("Using Groq for strategy improvement")
+        except ValueError as e:
+            logger.error(f"Groq not available: {str(e)}")
             raise ValueError(
-                "No LLM API key configured. Set GROQ_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY environment variable."
+                "Groq API key not configured. Set GROQ_API_KEY environment variable."
             )
         
         improvement = improver.improve_strategy(
