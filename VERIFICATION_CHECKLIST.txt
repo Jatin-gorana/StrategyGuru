@@ -1,0 +1,305 @@
+================================================================================
+                    BACKTEST REFACTOR - VERIFICATION CHECKLIST
+================================================================================
+
+PRE-DEPLOYMENT VERIFICATION
+════════════════════════════════════════════════════════════════════════════════
+
+FILE VERIFICATION
+─────────────────
+[ ] backend/services/backtest_persistence.py exists
+    └─ Contains: save_backtest_results() function
+    └─ Contains: Bulk insert logic
+    └─ Contains: Error handling
+
+[ ] backend/routers/backtest.py modified
+    └─ Contains: BackgroundTasks import
+    └─ Contains: background_tasks parameter
+    └─ Contains: background_tasks.add_task() call
+    └─ Removed: Old synchronous database save loops
+
+CODE VERIFICATION
+─────────────────
+[ ] BackgroundTasks imported from fastapi
+    └─ Line: from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+
+[ ] save_backtest_results imported
+    └─ Line: from services.backtest_persistence import save_backtest_results
+
+[ ] Endpoint signature updated
+    └─ Contains: background_tasks: BackgroundTasks parameter
+
+[ ] Background task scheduled
+    └─ Contains: background_tasks.add_task(save_backtest_results, ...)
+
+[ ] Response returned immediately
+    └─ No database operations before return statement
+
+SYNTAX VERIFICATION
+───────────────────
+[ ] No Python syntax errors
+    └─ Run: python -m py_compile backend/routers/backtest.py
+    └─ Run: python -m py_compile backend/services/backtest_persistence.py
+
+[ ] No import errors
+    └─ Run: python -c "from backend.routers import backtest"
+    └─ Run: python -c "from backend.services import backtest_persistence"
+
+================================================================================
+                         DEPLOYMENT VERIFICATION
+================================================================================
+
+BACKEND STARTUP
+───────────────
+[ ] Backend starts without errors
+    └─ Command: python main.py
+    └─ Expected: Server running on http://127.0.0.1:8000
+
+[ ] No import errors on startup
+    └─ Check: No "ModuleNotFoundError" messages
+    └─ Check: No "ImportError" messages
+
+[ ] API endpoints accessible
+    └─ Command: curl http://localhost:8000/health
+    └─ Expected: 200 OK response
+
+AUTHENTICATION
+──────────────
+[ ] JWT token generation works
+    └─ Register new user or login
+    └─ Verify access_token in response
+
+[ ] JWT token validation works
+    └─ Use token in Authorization header
+    └─ Verify request succeeds
+
+================================================================================
+                         FUNCTIONAL VERIFICATION
+================================================================================
+
+API RESPONSE TIME
+─────────────────
+[ ] API returns in <1 second
+    └─ Command: time curl -X POST http://localhost:8000/api/backtest \
+                  -H "Authorization: Bearer <token>" \
+                  -d '{"strategy_text": "...", "stock_symbol": "AAPL", ...}'
+    └─ Expected: real 0m0.5s (or less)
+
+[ ] Response format unchanged
+    └─ Check: Response contains "success": true
+    └─ Check: Response contains "trades": [...]
+    └─ Check: Response contains "equity_curve": [...]
+    └─ Check: Response contains "metrics": {...}
+
+[ ] Dashboard displays results
+    └─ Navigate to /dashboard
+    └─ Verify: Metrics cards show correct values
+    └─ Verify: Charts render correctly
+    └─ Verify: Trades table displays trades
+
+DATABASE PERSISTENCE
+────────────────────
+[ ] Backtest saved to database
+    └─ Wait 2-3 seconds for background task
+    └─ Command: psql -U postgres -d trading_backtester -c \
+                "SELECT COUNT(*) FROM backtests;"
+    └─ Expected: Count increased by 1
+
+[ ] Strategy saved to database
+    └─ Command: psql -U postgres -d trading_backtester -c \
+                "SELECT strategy_text FROM strategies ORDER BY created_at DESC LIMIT 1;"
+    └─ Expected: Strategy text matches input
+
+[ ] Trades saved to database
+    └─ Command: psql -U postgres -d trading_backtester -c \
+                "SELECT COUNT(*) FROM trades WHERE backtest_id = \
+                (SELECT id FROM backtests ORDER BY created_at DESC LIMIT 1);"
+    └─ Expected: Count matches number of trades in response
+
+[ ] Equity curve saved (reduced density)
+    └─ Command: psql -U postgres -d trading_backtester -c \
+                "SELECT COUNT(*) FROM equity_curve WHERE backtest_id = \
+                (SELECT id FROM backtests ORDER BY created_at DESC LIMIT 1);"
+    └─ Expected: ~50 rows (not 252)
+
+PROFILE PAGE
+────────────
+[ ] Profile page loads
+    └─ Navigate to /profile
+    └─ Verify: User information displays
+    └─ Verify: Statistics display (from database)
+
+[ ] Statistics calculated correctly
+    └─ Check: Total Strategies count
+    └─ Check: Total Backtests count
+    └─ Check: Average Return percentage
+    └─ Check: Best Sharpe Ratio
+
+BACKTEST HISTORY
+────────────────
+[ ] Backtest history page loads
+    └─ Navigate to /profile/backtests
+    └─ Verify: Latest backtest appears in list
+
+[ ] Backtest detail page loads
+    └─ Click on backtest in history
+    └─ Verify: All details display correctly
+
+================================================================================
+                         PERFORMANCE VERIFICATION
+================================================================================
+
+RESPONSE TIME COMPARISON
+────────────────────────
+[ ] 1-year backtest: <1 second
+    └─ Command: time curl -X POST http://localhost:8000/api/backtest \
+                  -d '{"start_date": "2023-01-01", "end_date": "2024-01-01", ...}'
+    └─ Expected: <1 second
+
+[ ] 5-year backtest: <1 second
+    └─ Command: time curl -X POST http://localhost:8000/api/backtest \
+                  -d '{"start_date": "2019-01-01", "end_date": "2024-01-01", ...}'
+    └─ Expected: <1 second
+
+[ ] 10-year backtest: <1 second
+    └─ Command: time curl -X POST http://localhost:8000/api/backtest \
+                  -d '{"start_date": "2014-01-01", "end_date": "2024-01-01", ...}'
+    └─ Expected: <1 second
+
+[ ] 20-year backtest: <1 second
+    └─ Command: time curl -X POST http://localhost:8000/api/backtest \
+                  -d '{"start_date": "2004-01-01", "end_date": "2024-01-01", ...}'
+    └─ Expected: <1 second
+
+DATABASE QUERY REDUCTION
+────────────────────────
+[ ] Bulk inserts working
+    └─ Check logs: "Added X trades for bulk insert"
+    └─ Check logs: "Added X equity curve points for bulk insert"
+
+[ ] Single commit working
+    └─ Check logs: "Successfully saved backtest"
+    └─ Verify: All data saved in one transaction
+
+STORAGE REDUCTION
+─────────────────
+[ ] Equity curve density reduced
+    └─ 1-year backtest: ~50 rows (not 252)
+    └─ 5-year backtest: ~250 rows (not 1250)
+    └─ 10-year backtest: ~500 rows (not 2500)
+
+================================================================================
+                         LOGGING VERIFICATION
+================================================================================
+
+EXPECTED LOG MESSAGES
+─────────────────────
+[ ] "Starting background persistence for user ..."
+    └─ Appears after API response
+
+[ ] "Added X trades for bulk insert"
+    └─ Shows number of trades
+
+[ ] "Added X equity curve points for bulk insert"
+    └─ Shows number of equity points (~50 per year)
+
+[ ] "Successfully saved backtest ..."
+    └─ Confirms successful save
+
+ERROR HANDLING
+──────────────
+[ ] No error logs for successful backtest
+    └─ Check: No "Error saving backtest" messages
+
+[ ] Graceful error handling
+    └─ If database fails: Error logged but user still has results
+    └─ Check: User can still see backtest on dashboard
+
+================================================================================
+                         EDGE CASE VERIFICATION
+================================================================================
+
+UNAUTHENTICATED USER
+────────────────────
+[ ] Unauthenticated backtest works
+    └─ Run backtest without JWT token
+    └─ Expected: Results returned, no database save
+
+LARGE BACKTEST
+──────────────
+[ ] 20-year backtest completes
+    └─ Run backtest with 20 years of data
+    └─ Expected: <1 second response
+
+[ ] Many trades handled
+    └─ Strategy with 100+ trades
+    └─ Expected: All trades saved correctly
+
+MULTIPLE CONCURRENT BACKTESTS
+──────────────────────────────
+[ ] Multiple users can run backtests
+    └─ Run 2-3 backtests simultaneously
+    └─ Expected: All complete successfully
+
+[ ] Database handles concurrent saves
+    └─ Check: No database lock errors
+    └─ Check: All data saved correctly
+
+================================================================================
+                         ROLLBACK VERIFICATION
+================================================================================
+
+ROLLBACK CAPABILITY
+───────────────────
+[ ] Can revert to synchronous saves
+    └─ Remove BackgroundTasks import
+    └─ Remove background_tasks parameter
+    └─ Restore original database save code
+    └─ Restart backend
+
+[ ] Rollback doesn't break anything
+    └─ API still works
+    └─ Database still works
+    └─ Frontend still works
+
+================================================================================
+                         FINAL CHECKLIST
+================================================================================
+
+BEFORE GOING LIVE
+─────────────────
+[ ] All file verifications passed
+[ ] All code verifications passed
+[ ] All syntax verifications passed
+[ ] Backend starts without errors
+[ ] API response time <1 second
+[ ] Database persistence working
+[ ] Profile page working
+[ ] Backtest history working
+[ ] Logging working correctly
+[ ] Edge cases handled
+[ ] Rollback capability verified
+
+DEPLOYMENT READY
+────────────────
+[ ] All checklist items completed
+[ ] No errors in logs
+[ ] Performance targets met
+[ ] Database integrity verified
+[ ] Frontend working correctly
+[ ] Ready for production
+
+================================================================================
+                         SIGN-OFF
+================================================================================
+
+Verification Date: _______________
+Verified By: _______________
+Status: [ ] PASS [ ] FAIL
+
+Notes:
+_____________________________________________________________________________
+_____________________________________________________________________________
+_____________________________________________________________________________
+
+================================================================================

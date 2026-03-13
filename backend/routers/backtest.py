@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from datetime import datetime, date
 import logging
 from typing import Optional, Dict, Any
@@ -12,6 +12,7 @@ from services.indicators import add_all_indicators
 from services.backtest_engine import BacktestEngine
 from services.dsl_sandbox import SandboxExecutor
 from services.dsl_parser import parse_dsl
+from services.backtest_persistence import save_backtest_results
 from database.database import get_db
 from database.auth import get_current_user
 from database.models import User
@@ -29,6 +30,7 @@ router = APIRouter()
 @router.post("/backtest", response_model=BacktestResponse)
 async def run_backtest(
     request: BacktestRequest,
+    background_tasks: BackgroundTasks,
     current_user: Optional[User] = Depends(get_current_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
@@ -202,75 +204,56 @@ async def run_backtest(
             profit_factor=metrics.profit_factor
         )
         
-        # Save to database if user is authenticated
-        if current_user and db:
-            try:
-                logger.info(f"Saving backtest results to database for user {current_user.email}")
-                
-                # Create strategy record
-                strategy = await create_strategy(db, current_user.id, request.strategy_text)
-                
-                # Create backtest record
-                backtest = await create_backtest(
-                    db,
-                    current_user.id,
-                    strategy.id,
-                    request.stock_symbol,
-                    date.fromisoformat(request.start_date),
-                    date.fromisoformat(request.end_date),
-                    request.initial_capital
-                )
-                
-                # Update backtest with metrics
-                await update_backtest_metrics(
-                    db,
-                    backtest.id,
-                    metrics.total_return,
-                    metrics.total_return_percent,
-                    metrics.sharpe_ratio,
-                    metrics.max_drawdown,
-                    metrics.max_drawdown_percent,
-                    metrics.win_rate,
-                    metrics.profit_factor,
-                    metrics.total_trades
-                )
-                
-                # Save trades
-                for trade in trades:
-                    await create_trade(
-                        db,
-                        backtest.id,
-                        trade.entry_date,
-                        trade.exit_date,
-                        trade.entry_price,
-                        trade.exit_price,
-                        trade.pnl,
-                        trade.pnl_percent
-                    )
-                
-                # Save equity curve
-                for ec in equity_curve:
-                    await create_equity_point(
-                        db,
-                        backtest.id,
-                        ec.date,
-                        ec.equity
-                    )
-                
-                logger.info(f"Backtest results saved successfully. Backtest ID: {backtest.id}")
-            except Exception as e:
-                logger.error(f"Failed to save backtest to database: {str(e)}")
-                # Don't fail the backtest if database save fails
-                pass
+        # Schedule database persistence as background task
+        # This ensures the API response is returned immediately
+        if current_user:
+            # Convert trades to dictionaries for background task
+            trades_data = [
+                {
+                    'entry_date': t.entry_date,
+                    'exit_date': t.exit_date,
+                    'entry_price': t.entry_price,
+                    'exit_price': t.exit_price,
+                    'pnl': t.pnl,
+                    'pnl_percent': t.pnl_percent
+                }
+                for t in trades
+            ]
+            
+            # Convert equity curve to dictionaries for background task
+            equity_data = [
+                {
+                    'date': ec.date,
+                    'equity': ec.equity
+                }
+                for ec in equity_curve
+            ]
+            
+            # Add background task for database persistence
+            background_tasks.add_task(
+                save_backtest_results,
+                trades=trades_data,
+                equity_curve=equity_data,
+                metrics={
+                    'total_return': metrics.total_return,
+                    'total_return_percent': metrics.total_return_percent,
+                    'sharpe_ratio': metrics.sharpe_ratio,
+                    'max_drawdown': metrics.max_drawdown,
+                    'max_drawdown_percent': metrics.max_drawdown_percent,
+                    'win_rate': metrics.win_rate,
+                    'profit_factor': metrics.profit_factor,
+                    'total_trades': metrics.total_trades
+                },
+                user_id=current_user.id,
+                strategy_text=request.strategy_text,
+                stock_symbol=request.stock_symbol,
+                start_date=date.fromisoformat(request.start_date),
+                end_date=date.fromisoformat(request.end_date),
+                initial_capital=request.initial_capital
+            )
+            logger.info(f"Scheduled background persistence for user {current_user.email}")
         
-        return BacktestResponse(
-            success=True,
-            message=f"Backtest completed successfully. {metrics.total_trades} trades executed.",
-            trades=response_trades,
-            equity_curve=response_equity,
-            metrics=response_metrics
-        )
-        
+        # Return response immediately (database save happens in background)
         return BacktestResponse(
             success=True,
             message=f"Backtest completed successfully. {metrics.total_trades} trades executed.",
