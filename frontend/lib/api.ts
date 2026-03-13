@@ -98,12 +98,20 @@ export const api = {
     metrics: BacktestMetrics,
     tradesCount: number
   ): Promise<StrategyImprovement> => {
-    const response = await apiClient.post('/api/backtest/improve-strategy', {
-      strategy_text: strategyText,
-      metrics: metrics,
-      trades_count: tradesCount,
-    })
-    return response.data
+    try {
+      const response = await apiClient.post('/api/backtest/improve-strategy', {
+        strategy_text: strategyText,
+        metrics: metrics,
+        trades_count: tradesCount,
+      })
+      return response.data
+    } catch (error: any) {
+      // Handle error response
+      if (error.response?.data?.detail) {
+        throw new Error(error.response.data.detail)
+      }
+      throw error
+    }
   },
 
   healthCheck: async () => {

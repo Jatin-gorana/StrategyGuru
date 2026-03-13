@@ -3,7 +3,7 @@ from datetime import datetime
 import logging
 from typing import Optional, Dict, Any
 
-from models.request_models import BacktestRequest
+from models.request_models import BacktestRequest, ImproveStrategyRequest
 from models.response_models import BacktestResponse, Trade, EquityCurvePoint, BacktestMetrics
 from services.data_fetcher import get_stock_data
 from services.strategy_parser import SimpleStrategyParser, StrategyParser
@@ -392,37 +392,50 @@ def _evaluate_condition(df, condition_text: str):
 
 
 @router.post("/backtest/improve-strategy")
-async def improve_strategy(
-    strategy_text: str,
-    metrics: Dict[str, Any],
-    trades_count: int = 0
-):
+async def improve_strategy(request: ImproveStrategyRequest):
     """
     Get LLM suggestions to improve a trading strategy.
     
     Args:
-        strategy_text: Current strategy description
-        metrics: Backtest metrics dictionary
-        trades_count: Number of trades executed
+        request: ImproveStrategyRequest with:
+            - strategy_text: Current strategy description
+            - metrics: Backtest metrics dictionary
+            - trades_count: Number of trades executed (optional)
     
     Returns:
         Strategy improvement suggestions
     """
     try:
+        strategy_text = request.strategy_text
+        metrics = request.metrics
+        trades_count = request.trades_count
+        
+        if not strategy_text:
+            raise ValueError("strategy_text is required")
+        if not metrics:
+            raise ValueError("metrics is required")
+        
         logger.info(f"Improving strategy: {strategy_text[:50]}...")
         
         from services.strategy_improver import StrategyImprover
         
-        # Try OpenAI first, fall back to Gemini
-        try:
-            improver = StrategyImprover(provider='openai')
-        except ValueError:
+        # Try Groq first, then OpenAI, then Gemini
+        improver = None
+        providers = ['groq', 'openai', 'gemini']
+        
+        for provider in providers:
             try:
-                improver = StrategyImprover(provider='gemini')
-            except ValueError:
-                raise ValueError(
-                    "No LLM API key configured. Set OPENAI_API_KEY or GOOGLE_API_KEY environment variable."
-                )
+                improver = StrategyImprover(provider=provider)
+                logger.info(f"Using {provider} for strategy improvement")
+                break
+            except ValueError as e:
+                logger.debug(f"{provider} not available: {str(e)}")
+                continue
+        
+        if improver is None:
+            raise ValueError(
+                "No LLM API key configured. Set GROQ_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY environment variable."
+            )
         
         improvement = improver.improve_strategy(
             strategy_text=strategy_text,

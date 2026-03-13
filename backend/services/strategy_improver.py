@@ -20,28 +20,45 @@ class StrategyImprovement:
 class StrategyImprover:
     """Improve trading strategies using LLM."""
     
-    def __init__(self, provider: str = 'openai', api_key: Optional[str] = None):
+    def __init__(self, provider: str = 'groq', api_key: Optional[str] = None):
         """
         Initialize strategy improver.
         
         Args:
-            provider: 'openai' or 'gemini'
+            provider: 'groq', 'openai', or 'gemini'
             api_key: API key for the provider
         """
         self.provider = provider.lower()
-        self.api_key = api_key or os.getenv(
-            'OPENAI_API_KEY' if provider.lower() == 'openai' else 'GOOGLE_API_KEY'
-        )
+        
+        # Determine which API key to use
+        if self.provider == 'groq':
+            self.api_key = api_key or os.getenv('GROQ_API_KEY')
+        elif self.provider == 'openai':
+            self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+        elif self.provider == 'gemini':
+            self.api_key = api_key or os.getenv('GOOGLE_API_KEY')
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
         
         if not self.api_key:
             raise ValueError(f"{provider.upper()}_API_KEY not provided or set in environment")
         
-        if self.provider == 'openai':
+        if self.provider == 'groq':
+            self._init_groq()
+        elif self.provider == 'openai':
             self._init_openai()
         elif self.provider == 'gemini':
             self._init_gemini()
         else:
             raise ValueError(f"Unknown provider: {provider}")
+    
+    def _init_groq(self):
+        """Initialize Groq client."""
+        try:
+            from groq import Groq
+            self.client = Groq(api_key=self.api_key)
+        except ImportError:
+            raise ImportError("groq package not installed. Install with: pip install groq")
     
     def _init_openai(self):
         """Initialize OpenAI client."""
@@ -79,7 +96,9 @@ class StrategyImprover:
         """
         prompt = self._build_improvement_prompt(strategy_text, metrics, trades_count)
         
-        if self.provider == 'openai':
+        if self.provider == 'groq':
+            return self._improve_with_groq(prompt, strategy_text)
+        elif self.provider == 'openai':
             return self._improve_with_openai(prompt, strategy_text)
         else:
             return self._improve_with_gemini(prompt, strategy_text)
@@ -129,6 +148,44 @@ PROVIDE YOUR RESPONSE IN THIS EXACT JSON FORMAT:
 
 Focus on practical, implementable improvements that address the specific weaknesses shown in the backtest results.
 """
+    
+    def _improve_with_groq(self, prompt: str, strategy_text: str) -> StrategyImprovement:
+        """Get improvements from Groq."""
+        try:
+            response = self.client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert trading strategy analyst. Provide specific, actionable improvements to trading strategies based on backtest results. Always respond with valid JSON."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=2000
+            )
+            
+            response_text = response.choices[0].message.content
+            
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if not json_match:
+                raise ValueError("No JSON found in response")
+            
+            json_str = json_match.group(0)
+            data = json.loads(json_str)
+            
+            return StrategyImprovement(
+                original_strategy=strategy_text,
+                improved_strategy=data.get('improved_strategy', ''),
+                improvements=data.get('improvements', []),
+                reasoning=data.get('reasoning', ''),
+                risk_level=data.get('risk_level', 'Medium')
+            )
+        except Exception as e:
+            logger.error(f"Groq improvement failed: {str(e)}")
+            raise
     
     def _improve_with_openai(self, prompt: str, strategy_text: str) -> StrategyImprovement:
         """Get improvements from OpenAI."""

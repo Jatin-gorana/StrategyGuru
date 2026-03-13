@@ -34,7 +34,17 @@ export default function StrategyImprovementModal({
       const result = await api.improveStrategy(strategyText, metrics, tradesCount)
       setImprovement(result)
     } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to improve strategy'
+      // Extract error message safely
+      let errorMessage = 'Failed to improve strategy'
+      
+      if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail
+      } else if (err.message) {
+        errorMessage = err.message
+      } else if (typeof err === 'string') {
+        errorMessage = err
+      }
+      
       setError(errorMessage)
       console.error('Improvement error:', err)
     } finally {

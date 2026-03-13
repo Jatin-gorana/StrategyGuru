@@ -2,154 +2,123 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, date, timedelta
 from typing import Optional, Union
-import time
 import logging
-import requests
-import os
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
+from io import StringIO
 
 logger = logging.getLogger(__name__)
 
-def _fetch_from_alpha_vantage(
+
+def _format_symbol_for_stooq(symbol: str) -> str:
+    """
+    Convert symbol to Stooq format.
+    
+    Examples:
+        AAPL -> aapl.us
+        GOOGL -> googl.us
+        RELIANCE.BSE -> reliance.in (or keep as is if already formatted)
+    
+    Args:
+        symbol: Stock ticker symbol
+        
+    Returns:
+        Formatted symbol for Stooq API
+    """
+    symbol = symbol.strip().upper()
+    
+    # If already has a dot (e.g., RELIANCE.BSE), convert to lowercase
+    if '.' in symbol:
+        return symbol.lower()
+    
+    # Otherwise, assume US stock and add .us suffix
+    return f"{symbol.lower()}.us"
+
+
+def _fetch_from_stooq(
     symbol: str,
     start_date: date,
-    end_date: date,
-    api_key: str = "demo"
+    end_date: date
 ) -> Optional[pd.DataFrame]:
     """
-    Fetch daily data from Alpha Vantage TIME_SERIES_DAILY endpoint.
-    Works with both US stocks (AAPL) and international stocks (RELIANCE.BSE).
+    Fetch daily data from Stooq CSV endpoint.
     
-    Note: Demo API key has 5 requests per minute limit. For production, use a paid API key.
+    Args:
+        symbol: Stock ticker symbol (will be formatted for Stooq)
+        start_date: Start date (date object)
+        end_date: End date (date object)
+        
+    Returns:
+        DataFrame with OHLCV data or None if fetch fails
     """
     try:
-        logger.info(f"Fetching daily data for {symbol} from Alpha Vantage (API key: {api_key[:4]}...)")
+        # Format symbol for Stooq
+        stooq_symbol = _format_symbol_for_stooq(symbol)
+        logger.info(f"Fetching data for {symbol} (Stooq: {stooq_symbol})")
         
-        url = "https://www.alphavantage.co/query"
-        params = {
-            "function": "TIME_SERIES_DAILY",
-            "symbol": symbol,
-            "outputsize": "full",
-            "apikey": api_key
-        }
+        # Construct Stooq CSV URL
+        url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&i=d"
+        logger.info(f"Fetching from: {url}")
         
-        # Retry logic for rate limiting
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Fetching daily data (attempt {attempt + 1}/{max_retries})")
-                response = requests.get(url, params=params, timeout=30)
-                response.raise_for_status()
-                data = response.json()
-                
-                # Check for errors
-                if "Error Message" in data:
-                    logger.error(f"Alpha Vantage error: {data.get('Error Message')}")
-                    return None
-                
-                if "Note" in data:
-                    logger.warning(f"Alpha Vantage rate limit: {data.get('Note')}")
-                    if attempt < max_retries - 1:
-                        wait_time = 15 * (attempt + 1)  # Increased wait time for demo key
-                        logger.info(f"Rate limited, waiting {wait_time} seconds...")
-                        time.sleep(wait_time)
-                        continue
-                    return None
-                
-                # Check for Information key (indicates demo key limitation)
-                if "Information" in data and len(data) == 1:
-                    logger.warning(f"Alpha Vantage returned only Information: {data.get('Information')}")
-                    if attempt < max_retries - 1:
-                        wait_time = 15 * (attempt + 1)
-                        logger.info(f"Waiting {wait_time} seconds before retry...")
-                        time.sleep(wait_time)
-                        continue
-                    return None
-                
-                # Check for time series data - handle both US and international formats
-                time_series_key = None
-                for key in data.keys():
-                    if "Time Series" in key and "Daily" in key:
-                        time_series_key = key
-                        break
-                
-                if time_series_key is None:
-                    logger.warning(f"No daily time series data found. Response keys: {list(data.keys())}")
-                    return None
-                
-                time_series = data[time_series_key]
-                logger.info(f"Found {len(time_series)} daily data points")
-                
-                # Convert to DataFrame
-                df_data = []
-                for date_str, values in time_series.items():
-                    try:
-                        # Parse date
-                        date_obj = pd.to_datetime(date_str).date()
-                        
-                        # Extract OHLCV - handle both formats
-                        open_price = float(values.get('1. open', 0))
-                        high_price = float(values.get('2. high', 0))
-                        low_price = float(values.get('3. low', 0))
-                        close_price = float(values.get('4. close', 0))
-                        volume = int(float(values.get('5. volume', 0)))
-                        
-                        # Skip if any price is 0
-                        if open_price == 0 or close_price == 0:
-                            continue
-                        
-                        df_data.append({
-                            'date': pd.to_datetime(date_str),
-                            'open': open_price,
-                            'high': high_price,
-                            'low': low_price,
-                            'close': close_price,
-                            'volume': volume
-                        })
-                    
-                    except (KeyError, ValueError) as e:
-                        logger.debug(f"Error parsing daily row {date_str}: {e}")
-                        continue
-                
-                if not df_data:
-                    logger.warning("No valid data from Alpha Vantage")
-                    return None
-                
-                df = pd.DataFrame(df_data)
-                df = df.sort_values('date')
-                
-                # Filter by date range
-                df = df[(df['date'].dt.date >= start_date) & (df['date'].dt.date <= end_date)]
-                
-                if df.empty:
-                    logger.warning(f"No data in date range {start_date} to {end_date}")
-                    return None
-                
-                df = df.set_index('date')
-                logger.info(f"✓ Successfully fetched {len(df)} daily bars for {symbol}")
-                return df
-                
-            except requests.exceptions.Timeout:
-                logger.warning(f"Timeout on attempt {attempt + 1}/{max_retries}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-                return None
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"Request error: {str(e)}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-                return None
+        # Fetch CSV data
+        df = pd.read_csv(url)
         
-        return None
+        if df.empty:
+            logger.warning(f"No data returned from Stooq for {symbol}")
+            return None
+        
+        logger.info(f"Fetched {len(df)} rows from Stooq")
+        
+        # Stooq CSV format: Date, Open, High, Low, Close, Volume
+        # Column names are typically: Date, Open, High, Low, Close, Volume
+        
+        # Standardize column names to lowercase
+        df.columns = [col.lower().strip() for col in df.columns]
+        
+        # Ensure required columns exist
+        required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+        if not all(col in df.columns for col in required_cols):
+            logger.error(f"Missing required columns. Found: {list(df.columns)}")
+            return None
+        
+        # Convert date column to datetime
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # Filter by date range
+        df = df[(df['date'].dt.date >= start_date) & (df['date'].dt.date <= end_date)]
+        
+        if df.empty:
+            logger.warning(f"No data in date range {start_date} to {end_date}")
+            return None
+        
+        # Sort by date in ascending order
+        df = df.sort_values('date')
+        
+        # Select and reorder columns
+        df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
+        
+        # Convert data types
+        df['open'] = pd.to_numeric(df['open'], errors='coerce')
+        df['high'] = pd.to_numeric(df['high'], errors='coerce')
+        df['low'] = pd.to_numeric(df['low'], errors='coerce')
+        df['close'] = pd.to_numeric(df['close'], errors='coerce')
+        df['volume'] = pd.to_numeric(df['volume'], errors='coerce').fillna(0).astype(int)
+        
+        # Remove rows with NaN prices
+        df = df.dropna(subset=['open', 'high', 'low', 'close'])
+        
+        if df.empty:
+            logger.warning("No valid data after cleaning")
+            return None
+        
+        # Set date as index
+        df = df.set_index('date')
+        
+        logger.info(f"✓ Successfully fetched {len(df)} daily bars for {symbol}")
+        return df
         
     except Exception as e:
-        logger.error(f"Alpha Vantage fetch failed: {str(e)}")
+        logger.error(f"Stooq fetch failed for {symbol}: {str(e)}")
         return None
+
 
 def get_stock_data(
     symbol: str,
@@ -157,23 +126,22 @@ def get_stock_data(
     end_date: Union[str, date]
 ) -> pd.DataFrame:
     """
-    Fetch historical stock data from Alpha Vantage TIME_SERIES_DAILY.
-    Works with US stocks (AAPL, GOOGL) and international stocks (RELIANCE.BSE).
+    Fetch historical stock data from Stooq.
     
     Args:
-        symbol: Stock ticker symbol (e.g., 'AAPL', 'RELIANCE.BSE')
+        symbol: Stock ticker symbol (e.g., 'AAPL', 'GOOGL', 'RELIANCE.BSE')
         start_date: Start date (YYYY-MM-DD format or date object)
         end_date: End date (YYYY-MM-DD format or date object)
         
     Returns:
-        pandas DataFrame with columns: date, open, high, low, close, volume
+        pandas DataFrame with columns: open, high, low, close, volume
         Indexed by date and sorted chronologically
-    
-    Note: Demo API key has 5 requests per minute limit. For production, get a free API key at:
-    https://www.alphavantage.co/support/#api-key
+        
+    Raises:
+        ValueError: If data cannot be fetched or is invalid
     """
     try:
-        # Convert string dates to datetime if needed
+        # Convert string dates to date objects if needed
         if isinstance(start_date, str):
             start_date = pd.to_datetime(start_date).date()
         if isinstance(end_date, str):
@@ -183,29 +151,25 @@ def get_stock_data(
         if start_date >= end_date:
             raise ValueError("Start date must be before end date")
         
-        # Normalize symbol to uppercase
-        symbol = symbol.upper().strip()
+        # Normalize symbol
+        symbol = symbol.strip()
         
         logger.info(f"Fetching {symbol} from {start_date} to {end_date}")
         
-        # Get API key from environment
-        av_api_key = os.getenv("ALPHA_VANTAGE_API_KEY", "demo").strip()
-        if not av_api_key:
-            av_api_key = "demo"
+        # Fetch data from Stooq
+        df = _fetch_from_stooq(symbol, start_date, end_date)
         
-        logger.info(f"Using API key: {av_api_key[:4]}...")
-        av_data = _fetch_from_alpha_vantage(symbol, start_date, end_date, api_key=av_api_key)
+        if df is not None and not df.empty:
+            return df
         
-        if av_data is not None and not av_data.empty:
-            return av_data
-        
-        # All methods failed
-        raise ValueError(f"Failed to fetch data for {symbol}. Check: 1) Symbol exists, 2) Date range valid, 3) API rate limits (demo key: 5 req/min)")
+        # If fetch failed
+        raise ValueError(f"Failed to fetch data for {symbol}. Check: 1) Symbol exists, 2) Date range valid, 3) Internet connection")
     
     except ValueError as e:
         raise ValueError(f"Data validation error for {symbol}: {str(e)}")
     except Exception as e:
         raise Exception(f"Error fetching data for {symbol}: {str(e)}")
+
 
 def _process_data(data: pd.DataFrame, symbol: str) -> pd.DataFrame:
     """Process raw data into standard format."""
@@ -235,8 +199,17 @@ def _process_data(data: pd.DataFrame, symbol: str) -> pd.DataFrame:
     except Exception as e:
         raise ValueError(f"Error processing data for {symbol}: {str(e)}")
 
+
 def validate_stock_data(df: pd.DataFrame) -> bool:
-    """Validate DataFrame structure."""
+    """
+    Validate DataFrame structure.
+    
+    Args:
+        df: DataFrame to validate
+        
+    Returns:
+        True if valid, False otherwise
+    """
     required_cols = ['open', 'high', 'low', 'close', 'volume']
     
     if not all(col in df.columns for col in required_cols):
@@ -250,12 +223,23 @@ def validate_stock_data(df: pd.DataFrame) -> bool:
     
     return True
 
+
 def get_multiple_stocks(
     symbols: list,
     start_date: Union[str, date],
     end_date: Union[str, date]
 ) -> dict:
-    """Fetch data for multiple stocks."""
+    """
+    Fetch data for multiple stocks.
+    
+    Args:
+        symbols: List of stock symbols
+        start_date: Start date
+        end_date: End date
+        
+    Returns:
+        Dictionary mapping symbols to DataFrames
+    """
     data = {}
     for symbol in symbols:
         try:
@@ -264,6 +248,7 @@ def get_multiple_stocks(
             logger.warning(f"Failed to fetch {symbol}: {str(e)}")
     
     return data
+
 
 class DataFetcher:
     """Legacy class interface for backward compatibility."""
@@ -274,13 +259,31 @@ class DataFetcher:
         start_date: date,
         end_date: date
     ) -> pd.DataFrame:
-        """Fetch historical OHLCV data."""
+        """
+        Fetch historical OHLCV data.
+        
+        Args:
+            symbol: Stock ticker symbol
+            start_date: Start date
+            end_date: End date
+            
+        Returns:
+            DataFrame with date, open, high, low, close, volume columns
+        """
         data = get_stock_data(symbol, start_date, end_date)
         data = data.reset_index()
         return data
     
     @staticmethod
     def validate_data(df: pd.DataFrame) -> bool:
-        """Validate that data has required columns."""
+        """
+        Validate that data has required columns.
+        
+        Args:
+            df: DataFrame to validate
+            
+        Returns:
+            True if valid, False otherwise
+        """
         required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
         return all(col in df.columns for col in required_cols)
