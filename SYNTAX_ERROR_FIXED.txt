@@ -1,0 +1,58 @@
+================================================================================
+SYNTAX ERROR FIXED
+================================================================================
+
+ISSUE: IndentationError in backend/services/data_fetcher.py at line 155
+
+CAUSE: Duplicate code at the end of get_stock_data() function
+
+STATUS: FIXED ✓
+
+================================================================================
+WHAT WAS FIXED
+================================================================================
+
+File: backend/services/data_fetcher.py
+
+Problem:
+  - Duplicate "else: break" block
+  - Duplicate "All retries failed" block
+  - Caused IndentationError
+
+Solution:
+  - Removed duplicate code
+  - Cleaned up function structure
+  - Fixed indentation
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Restart Backend
+   python -m uvicorn main:app --reload
+
+2. Test MSFT
+   curl -X POST http://localhost:8000/api/backtest \
+     -H "Content-Type: application/json" \
+     -d '{"strategy_text": "Buy when RSI < 30 and sell when RSI > 70", "stock_symbol": "MSFT", "start_date": "2023-01-01", "end_date": "2024-01-01", "initial_capital": 10000}'
+
+3. Test AAPL
+   curl -X POST http://localhost:8000/api/backtest \
+     -H "Content-Type: application/json" \
+     -d '{"strategy_text": "Buy when RSI < 30 and sell when RSI > 70", "stock_symbol": "AAPL", "start_date": "2023-01-01", "end_date": "2024-01-01", "initial_capital": 10000}'
+
+================================================================================
+EXPECTED OUTPUT
+================================================================================
+
+Backend should start without errors:
+  INFO:     Uvicorn running on http://127.0.0.1:8000
+  INFO:     Application startup complete
+
+Tests should return success responses with trades and metrics.
+
+================================================================================
+STATUS: READY TO TEST
+================================================================================
+
+The syntax error has been fixed. Restart the backend and test now!

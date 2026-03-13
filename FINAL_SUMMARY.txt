@@ -1,0 +1,277 @@
+================================================================================
+TRADING STRATEGY BACKTESTER - COMPLETE PROJECT
+================================================================================
+
+PROJECT OVERVIEW:
+- Full-stack trading strategy backtesting application
+- Backend: FastAPI (Python) REST API
+- Frontend: Next.js 14 (TypeScript/React) Web UI
+- Data: Yahoo Finance historical stock data
+- AI: OpenAI/Google Gemini strategy improvements
+- Charts: Recharts data visualization
+- Styling: Tailwind CSS modern design
+
+================================================================================
+QUICK START - CHOOSE ONE METHOD
+================================================================================
+
+METHOD 1: AUTOMATED SETUP (EASIEST) ⭐
+================================================================================
+
+macOS/Linux:
+  chmod +x run.sh
+  ./run.sh
+
+Windows:
+  run.bat
+
+Then follow on-screen instructions.
+
+METHOD 2: MANUAL SETUP (5 MINUTES)
+================================================================================
+
+Step 1 - Backend Setup:
+  python -m venv venv
+  source venv/bin/activate  # macOS/Linux
+  venv\Scripts\activate.bat # Windows
+  pip install -r requirements.txt
+
+Step 2 - Frontend Setup:
+  cd frontend
+  npm install
+  echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
+  cd ..
+
+Step 3 - Start Backend (Terminal 1):
+  source venv/bin/activate  # macOS/Linux
+  venv\Scripts\activate.bat # Windows
+  python backend/main.py
+
+Step 4 - Start Frontend (Terminal 2):
+  cd frontend
+  npm run dev
+
+Step 5 - Open Browser:
+  http://localhost:3000
+
+METHOD 3: ONE-LINER COMMANDS
+================================================================================
+
+macOS/Linux Setup:
+  python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && cd frontend && npm install && cd ..
+
+macOS/Linux Run Backend (Terminal 1):
+  source venv/bin/activate && python backend/main.py
+
+macOS/Linux Run Frontend (Terminal 2):
+  cd frontend && npm run dev
+
+Windows Setup:
+  python -m venv venv && venv\Scripts\activate.bat && pip install -r requirements.txt && cd frontend && npm install && cd ..
+
+Windows Run Backend (Terminal 1):
+  venv\Scripts\activate.bat && python backend/main.py
+
+Windows Run Frontend (Terminal 2):
+  cd frontend && npm run dev
+
+================================================================================
+VERIFY EVERYTHING WORKS
+================================================================================
+
+Backend Health Check:
+  curl http://localhost:8000/health
+
+Frontend:
+  Open http://localhost:3000 in browser
+
+API Documentation:
+  http://localhost:8000/docs
+
+================================================================================
+RUN YOUR FIRST BACKTEST
+================================================================================
+
+1. Go to http://localhost:3000
+2. Enter strategy: "Buy when RSI < 30 and sell when RSI > 70"
+3. Select stock: AAPL
+4. Set dates: 2023-01-01 to 2024-01-01
+5. Click "Run Backtest"
+6. View results on dashboard
+7. Click "Improve Strategy" for AI suggestions
+
+================================================================================
+WHAT'S RUNNING
+================================================================================
+
+Frontend:        http://localhost:3000
+Backend API:     http://localhost:8000
+API Docs:        http://localhost:8000/docs
+ReDoc:           http://localhost:8000/redoc
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+Backend won't start:
+  lsof -i :8000  # macOS/Linux - check if port in use
+  netstat -ano | findstr :8000  # Windows
+  python backend/main.py --port 8001  # Use different port
+
+Frontend won't start:
+  cd frontend
+  rm -rf node_modules package-lock.json
+  npm install
+  npm run dev
+
+API connection error:
+  curl http://localhost:8000/health  # Verify backend running
+  cat frontend/.env.local  # Check API URL
+
+================================================================================
+DOCUMENTATION FILES
+================================================================================
+
+START_HERE.md          - Quick overview and setup
+QUICK_START.md         - Fast setup guide
+SETUP_AND_RUN.md       - Detailed setup and troubleshooting
+COMMANDS.md            - Complete command reference
+RUN_PROJECT.md         - How to run the project
+frontend/README.md     - Frontend documentation
+API_DOCUMENTATION.md   - API endpoints reference
+STRATEGY_PARSER_SETUP.md - Strategy parser guide
+frontend/DASHBOARD_GUIDE.md - Dashboard features
+
+================================================================================
+PROJECT STRUCTURE
+================================================================================
+
+trading-backtester/
+├── backend/
+│   ├── main.py                 # FastAPI app
+│   ├── routers/backtest.py    # API endpoints
+│   ├── services/              # Business logic
+│   │   ├── data_fetcher.py
+│   │   ├── indicators.py
+│   │   ├── strategy_parser.py
+│   │   ├── backtest_engine.py
+│   │   └── strategy_improver.py
+│   └── models/                # Data schemas
+├── frontend/
+│   ├── app/                   # Next.js pages
+│   ├── components/            # React components
+│   ├── lib/api.ts            # API client
+│   └── package.json
+├── requirements.txt           # Python dependencies
+├── run.sh                     # macOS/Linux setup
+├── run.bat                    # Windows setup
+└── Documentation files
+
+================================================================================
+FEATURES
+================================================================================
+
+Backend:
+  ✅ FastAPI REST API
+  ✅ Yahoo Finance data fetching
+  ✅ 8+ technical indicators (RSI, SMA, EMA, MACD, etc.)
+  ✅ Natural language strategy parsing
+  ✅ Realistic backtest engine
+  ✅ Performance metrics (Sharpe, drawdown, win rate, etc.)
+  ✅ AI-powered strategy improvements
+  ✅ Interactive API documentation
+
+Frontend:
+  ✅ Modern Next.js 14 with App Router
+  ✅ Beautiful Tailwind CSS design
+  ✅ Interactive Recharts visualizations
+  ✅ Strategy input form
+  ✅ Comprehensive dashboard
+  ✅ Trade history table with sorting
+  ✅ Performance analysis
+  ✅ Strategy improvement modal
+  ✅ Export results as JSON
+  ✅ Fully responsive design
+
+================================================================================
+OPTIONAL: ENABLE AI STRATEGY IMPROVEMENTS
+================================================================================
+
+Get API Key:
+  OpenAI: https://platform.openai.com/api-keys
+  Google Gemini: https://makersuite.google.com/app/apikey
+
+Set Environment Variable:
+
+macOS/Linux:
+  export OPENAI_API_KEY="your-key-here"
+
+Windows (Command Prompt):
+  set OPENAI_API_KEY=your-key-here
+
+Windows (PowerShell):
+  $env:OPENAI_API_KEY="your-key-here"
+
+================================================================================
+COMMON COMMANDS
+================================================================================
+
+Backend:
+  python backend/main.py              # Run backend
+  python test_api.py                  # Test API
+  pip install -r requirements.txt     # Install deps
+
+Frontend:
+  npm run dev                          # Development
+  npm run build                        # Production build
+  npm start                            # Run production
+  npm run lint                         # Lint code
+
+Virtual Environment:
+  python -m venv venv                 # Create venv
+  source venv/bin/activate            # Activate (macOS/Linux)
+  venv\Scripts\activate.bat           # Activate (Windows)
+  deactivate                          # Deactivate
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. ✅ Choose setup method above
+2. ✅ Run setup script or follow manual steps
+3. ✅ Start backend (Terminal 1)
+4. ✅ Start frontend (Terminal 2)
+5. ✅ Open http://localhost:3000
+6. ✅ Run your first backtest
+7. ✅ Explore dashboard features
+8. ✅ Get AI strategy improvements
+9. ✅ Export and analyze results
+
+================================================================================
+SUPPORT
+================================================================================
+
+For detailed help:
+  - Read START_HERE.md for quick overview
+  - Read QUICK_START.md for fast setup
+  - Read SETUP_AND_RUN.md for detailed guide
+  - Read COMMANDS.md for all commands
+  - Visit http://localhost:8000/docs for API help
+  - Check browser console for frontend errors
+
+================================================================================
+READY TO START?
+================================================================================
+
+Choose your setup method above and get started in minutes!
+
+Fastest Way (30 seconds):
+  ./run.sh  # macOS/Linux
+  run.bat   # Windows
+
+Manual Way (5 minutes):
+  Follow Method 2 above
+
+Happy backtesting! 🚀
+
+================================================================================

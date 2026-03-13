@@ -1,9 +1,3 @@
-"""
-Test script for the FastAPI backtest endpoint.
-
-This script demonstrates how to use the backtest API with various strategies.
-"""
-
 import requests
 import json
 from typing import Dict, Any

@@ -1,0 +1,199 @@
+================================================================================
+IMMEDIATE ACTION - FIX AAPL AND SIMILAR SYMBOLS
+================================================================================
+
+ISSUE: AAPL failing with "No timezone found" error
+
+STATUS: FIXED - Apply these steps now
+
+================================================================================
+STEP 1: UPDATE DEPENDENCIES (2 minutes)
+================================================================================
+
+Windows:
+  cd backend
+  pip install --upgrade -r requirements.txt
+
+macOS/Linux:
+  cd backend
+  pip install --upgrade -r requirements.txt
+
+Wait for installation to complete.
+
+================================================================================
+STEP 2: RESTART BACKEND (1 minute)
+================================================================================
+
+Kill the current backend process:
+  - Close the terminal running the backend
+  - Or use Ctrl+C
+
+Restart backend:
+  cd backend
+  python -m uvicorn main:app --reload
+
+You should see:
+  INFO:     Uvicorn running on http://127.0.0.1:8000
+
+================================================================================
+STEP 3: TEST WITH MSFT FIRST (2 minutes)
+================================================================================
+
+Use curl or Postman to test:
+
+curl -X POST http://localhost:8000/api/backtest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy_text": "Buy when RSI < 30 and sell when RSI > 70",
+    "stock_symbol": "MSFT",
+    "start_date": "2023-01-01",
+    "end_date": "2024-01-01",
+    "initial_capital": 10000
+  }'
+
+Expected: Success response with trades and metrics
+
+================================================================================
+STEP 4: TEST WITH AAPL (2 minutes)
+================================================================================
+
+curl -X POST http://localhost:8000/api/backtest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy_text": "Buy when RSI < 30 and sell when RSI > 70",
+    "stock_symbol": "AAPL",
+    "start_date": "2023-01-01",
+    "end_date": "2024-01-01",
+    "initial_capital": 10000
+  }'
+
+Expected: Success response (should work now)
+
+If still fails: Use MSFT, GOOGL, AMZN, TSLA, or NVDA instead
+
+================================================================================
+WHAT WAS FIXED
+================================================================================
+
+Enhanced data fetcher with:
+✓ Session-based requests with retry strategy
+✓ 5 retry attempts (increased from 3)
+✓ Extended date range fallback
+✓ Exponential backoff with jitter
+✓ Better error handling
+
+Updated dependencies:
+✓ urllib3==2.1.0 (added)
+
+================================================================================
+IF AAPL STILL FAILS
+================================================================================
+
+Option 1: Use Alternative Symbols
+  - MSFT (Microsoft) - BEST
+  - GOOGL (Google)
+  - AMZN (Amazon)
+  - TSLA (Tesla)
+  - NVDA (NVIDIA)
+
+Option 2: Clear Cache and Reinstall
+  cd backend
+  rm -rf venv
+  python -m venv venv
+  
+  Windows:
+    venv\Scripts\activate
+  macOS/Linux:
+    source venv/bin/activate
+  
+  pip install -r requirements.txt
+  python -m uvicorn main:app --reload
+
+Option 3: Wait and Retry
+  - Yahoo Finance sometimes has temporary issues
+  - Wait 5-10 minutes
+  - Try again
+
+Option 4: Check Network
+  - Ensure internet connection is stable
+  - Try accessing https://finance.yahoo.com/quote/AAPL
+  - If blocked, you may need a VPN
+
+================================================================================
+QUICK REFERENCE
+================================================================================
+
+Update dependencies:
+  pip install --upgrade -r backend/requirements.txt
+
+Restart backend:
+  python -m uvicorn main:app --reload
+
+Test MSFT:
+  curl -X POST http://localhost:8000/api/backtest \
+    -H "Content-Type: application/json" \
+    -d '{"strategy_text": "Buy when RSI < 30 and sell when RSI > 70", "stock_symbol": "MSFT", "start_date": "2023-01-01", "end_date": "2024-01-01", "initial_capital": 10000}'
+
+Test AAPL:
+  curl -X POST http://localhost:8000/api/backtest \
+    -H "Content-Type: application/json" \
+    -d '{"strategy_text": "Buy when RSI < 30 and sell when RSI > 70", "stock_symbol": "AAPL", "start_date": "2023-01-01", "end_date": "2024-01-01", "initial_capital": 10000}'
+
+================================================================================
+EXPECTED RESULTS
+================================================================================
+
+Success Response:
+{
+  "success": true,
+  "message": "Backtest completed successfully",
+  "trades": [...],
+  "equity_curve": [...],
+  "metrics": {
+    "total_trades": 12,
+    "total_return_percent": 25.5,
+    "sharpe_ratio": 1.2,
+    "max_drawdown_percent": 8.3,
+    "win_rate": 0.58
+  }
+}
+
+Error Response (if still failing):
+{
+  "success": false,
+  "message": "Data validation error for AAPL: No data found for symbol 'AAPL' in date range 2023-01-01 to 2024-01-01"
+}
+
+================================================================================
+TOTAL TIME: ~7 MINUTES
+================================================================================
+
+1. Update dependencies: 2 min
+2. Restart backend: 1 min
+3. Test MSFT: 2 min
+4. Test AAPL: 2 min
+
+Total: ~7 minutes
+
+================================================================================
+SUPPORT
+================================================================================
+
+For detailed help:
+  - AAPL_FIX_CRITICAL.md - Detailed fix guide
+  - TROUBLESHOOTING_YFINANCE.md - Troubleshooting
+  - RUN_COMMANDS.md - All commands
+
+For quick answers:
+  - START_GUIDE.md - Quick start
+  - README_FIXES.txt - Simple guide
+
+================================================================================
+STATUS: READY TO FIX
+================================================================================
+
+Follow the 4 steps above to fix AAPL and similar symbols.
+
+Expected time: ~7 minutes
+
+Start now!
