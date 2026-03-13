@@ -36,12 +36,13 @@ export default function PerformanceChart({ trades }: PerformanceChartProps) {
       monthlyData[monthKey] = { wins: 0, losses: 0, profit: 0 }
     }
 
-    if (trade.pnl > 0) {
+    const pnl = trade.pnl ?? 0
+    if (pnl > 0) {
       monthlyData[monthKey].wins++
     } else {
       monthlyData[monthKey].losses++
     }
-    monthlyData[monthKey].profit += trade.pnl
+    monthlyData[monthKey].profit += pnl
   })
 
   const chartData = Object.entries(monthlyData)

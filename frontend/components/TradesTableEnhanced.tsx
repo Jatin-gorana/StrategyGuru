@@ -92,10 +92,10 @@ export default function TradesTableEnhanced({ trades }: TradesTableEnhancedProps
 
   // Calculate statistics
   const stats = useMemo(() => {
-    const totalPnL = sortedTrades.reduce((sum, trade) => sum + trade.pnl, 0)
+    const totalPnL = sortedTrades.reduce((sum, trade) => sum + (trade.pnl ?? 0), 0)
     const avgPnL = sortedTrades.length > 0 ? totalPnL / sortedTrades.length : 0
-    const winningTrades = sortedTrades.filter((t) => t.pnl > 0).length
-    const losingTrades = sortedTrades.filter((t) => t.pnl < 0).length
+    const winningTrades = sortedTrades.filter((t) => (t.pnl ?? 0) > 0).length
+    const losingTrades = sortedTrades.filter((t) => (t.pnl ?? 0) < 0).length
 
     return { totalPnL, avgPnL, winningTrades, losingTrades }
   }, [sortedTrades])
@@ -286,18 +286,18 @@ export default function TradesTableEnhanced({ trades }: TradesTableEnhancedProps
                   </td>
                   <td
                     className={`px-6 py-4 text-sm font-semibold text-right font-mono ${
-                      trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                      (trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                     }`}
                   >
-                    {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
+                    {(trade.pnl ?? 0) >= 0 ? '+' : ''}${(trade.pnl ?? 0).toFixed(2)}
                   </td>
                   <td
                     className={`px-6 py-4 text-sm font-semibold text-right ${
-                      trade.pnl_percent >= 0 ? 'text-green-400' : 'text-red-400'
+                      (trade.pnl_percent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                     }`}
                   >
-                    {trade.pnl_percent >= 0 ? '+' : ''}
-                    {trade.pnl_percent.toFixed(2)}%
+                    {(trade.pnl_percent ?? 0) >= 0 ? '+' : ''}
+                    {(trade.pnl_percent ?? 0).toFixed(2)}%
                   </td>
                 </tr>
               )

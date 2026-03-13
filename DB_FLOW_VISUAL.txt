@@ -1,0 +1,294 @@
+================================================================================
+                    DATABASE FLOW & UI RENDERING DIAGRAM
+================================================================================
+
+SCENARIO 1: USER RUNS BACKTEST
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FRONTEND (Next.js/React)                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. User fills form on home page                                           │
+│     ├─ Strategy: "Buy when RSI < 30"                                       │
+│     ├─ Symbol: "AAPL"                                                      │
+│     ├─ Start Date: "2023-01-01"                                            │
+│     ├─ End Date: "2024-01-01"                                              │
+│     └─ Initial Capital: $10,000                                            │
+│                                                                             │
+│  2. User clicks "Run Backtest"                                             │
+│     └─ Calls: api.runBacktest(request)                                     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                        HTTP POST /api/backtest
+                        (with JWT token in header)
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ BACKEND (FastAPI)                                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. Verify JWT token                                                       │
+│     └─ Extract user_id from token                                          │
+│                                                                             │
+│  2. Fetch historical data                                                  │
+│     └─ Call: get_stock_data("AAPL", "2023-01-01", "2024-01-01")           │
+│        └─ Makes HTTP request to Stooq API                                  │
+│        └─ Returns DataFrame with 252 rows (1 year of daily data)           │
+│                                                                             │
+│  3. Calculate indicators                                                   │
+│     └─ Call: add_all_indicators(df)                                        │
+│        └─ Calculates RSI, MA50, MA200, EMA12, EMA26, MACD, etc.           │
+│        └─ Returns DataFrame with 13 new columns                            │
+│                                                                             │
+│  4. Parse strategy                                                         │
+│     └─ Call: _parse_strategy("Buy when RSI < 30")                         │
+│        └─ Generates buy_condition and sell_condition Series                │
+│                                                                             │
+│  5. Run backtest engine                                                    │
+│     └─ Call: engine.run_backtest(buy_condition, sell_condition)           │
+│        └─ Iterates through 252 days                                        │
+│        └─ Generates 25 trades                                              │
+│        └─ Calculates metrics (Sharpe, Drawdown, Win Rate, etc.)           │
+│        └─ Returns: trades[], equity_curve[], metrics{}                     │
+│                                                                             │
+│  6. SAVE TO DATABASE                                                       │
+│     ├─ Create strategy record                                              │
+│     │  └─ INSERT INTO strategies (user_id, strategy_text, created_at)     │
+│     │                                                                      │
+│     ├─ Create backtest record                                              │
+│     │  └─ INSERT INTO backtests (user_id, strategy_id, stock_symbol, ...) │
+│     │                                                                      │
+│     ├─ Update backtest with metrics                                        │
+│     │  └─ UPDATE backtests SET total_return, sharpe_ratio, ...            │
+│     │                                                                      │
+│     ├─ Save 25 trades                                                      │
+│     │  └─ INSERT INTO trades (backtest_id, entry_date, exit_date, ...)    │
+│     │     (25 separate inserts)                                            │
+│     │                                                                      │
+│     └─ Save 252 equity curve points                                        │
+│        └─ INSERT INTO equity_curve (backtest_id, date, equity_value)      │
+│           (252 separate inserts)                                           │
+│                                                                             │
+│  7. Return response to frontend                                            │
+│     └─ JSON with trades[], equity_curve[], metrics{}                       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                        HTTP 200 OK + JSON Response
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ DATABASE (PostgreSQL)                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  STRATEGIES table:                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐  │
+│  │ id          │ user_id │ strategy_text        │ created_at          │  │
+│  ├─────────────────────────────────────────────────────────────────────┤  │
+│  │ uuid-1      │ user-1  │ Buy when RSI < 30    │ 2024-01-15 10:30:00 │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  BACKTESTS table:                                                          │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ id      │ user_id │ strategy_id │ stock_symbol │ total_return │ ... │  │
+│  ├──────────────────────────────────────────────────────────────────────┤  │
+│  │ uuid-2  │ user-1  │ uuid-1      │ AAPL         │ 1500         │ ... │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  TRADES table (25 rows):                                                   │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ id      │ backtest_id │ entry_date │ exit_date  │ profit │ pnl_pct │  │
+│  ├──────────────────────────────────────────────────────────────────────┤  │
+│  │ uuid-3  │ uuid-2      │ 2023-01-05 │ 2023-01-10 │ 500    │ 3.33    │  │
+│  │ uuid-4  │ uuid-2      │ 2023-01-15 │ 2023-01-20 │ -300   │ -1.94   │  │
+│  │ ...     │ ...         │ ...        │ ...        │ ...    │ ...     │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  EQUITY_CURVE table (252 rows):                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ id      │ backtest_id │ date       │ equity_value                    │  │
+│  ├──────────────────────────────────────────────────────────────────────┤  │
+│  │ uuid-5  │ uuid-2      │ 2023-01-01 │ 10000                           │  │
+│  │ uuid-6  │ uuid-2      │ 2023-01-02 │ 10050                           │  │
+│  │ uuid-7  │ uuid-2      │ 2023-01-03 │ 10100                           │  │
+│  │ ...     │ ...         │ ...        │ ...                             │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                        Data persisted in PostgreSQL
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FRONTEND (Next.js/React) - Dashboard Page                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. Receive JSON response from backend                                     │
+│     ├─ trades: [25 trade objects]                                         │
+│     ├─ equity_curve: [252 equity points]                                  │
+│     └─ metrics: {total_return, sharpe_ratio, win_rate, ...}              │
+│                                                                             │
+│  2. Store in session storage                                              │
+│     └─ sessionStorage.setItem('backtest_results', JSON.stringify(data))   │
+│                                                                             │
+│  3. Redirect to /dashboard                                                │
+│                                                                             │
+│  4. Dashboard page renders:                                               │
+│     ├─ MetricsCard: Shows total_return, sharpe_ratio, max_drawdown       │
+│     ├─ EquityChart: Renders equity_curve as line chart                   │
+│     ├─ TradesTable: Displays all 25 trades in table                      │
+│     └─ PerformanceChart: Shows monthly performance                        │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+
+SCENARIO 2: USER VIEWS PROFILE PAGE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FRONTEND (Next.js/React)                                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. User clicks profile icon                                              │
+│     └─ Navigates to /profile                                              │
+│                                                                             │
+│  2. Profile page mounts                                                   │
+│     └─ useEffect hook runs                                                │
+│        └─ Calls: api.getProfile()                                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                        HTTP GET /api/users/profile
+                        (with JWT token in header)
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ BACKEND (FastAPI)                                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. Verify JWT token                                                       │
+│     └─ Extract user_id from token                                          │
+│                                                                             │
+│  2. Get user statistics                                                    │
+│     └─ Call: get_user_statistics(db, user_id)                             │
+│                                                                             │
+│  3. Execute 4 database queries:                                            │
+│     ├─ Query 1: SELECT COUNT(*) FROM strategies WHERE user_id = ?         │
+│     │  └─ Result: 5 strategies                                             │
+│     │                                                                      │
+│     ├─ Query 2: SELECT COUNT(*) FROM backtests WHERE user_id = ?          │
+│     │  └─ Result: 12 backtests                                             │
+│     │                                                                      │
+│     ├─ Query 3: SELECT AVG(return_percent) FROM backtests WHERE user_id=? │
+│     │  └─ Result: 8.5% average return                                      │
+│     │                                                                      │
+│     └─ Query 4: SELECT MAX(sharpe_ratio) FROM backtests WHERE user_id = ? │
+│        └─ Result: 1.45 best Sharpe ratio                                   │
+│                                                                             │
+│  4. Return response:                                                       │
+│     {                                                                      │
+│       "user": {                                                            │
+│         "id": "user-uuid",                                                 │
+│         "name": "John Doe",                                                │
+│         "email": "john@example.com",                                       │
+│         "created_at": "2024-01-01T10:00:00"                               │
+│       },                                                                   │
+│       "total_strategies": 5,                                               │
+│       "total_backtests": 12,                                               │
+│       "average_return": 8.5,                                               │
+│       "best_sharpe_ratio": 1.45                                            │
+│     }                                                                      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                        HTTP 200 OK + JSON Response
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ DATABASE (PostgreSQL)                                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  USERS table:                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ id       │ name     │ email              │ password_hash │ created_at │  │
+│  ├──────────────────────────────────────────────────────────────────────┤  │
+│  │ user-1   │ John Doe │ john@example.com   │ $2b$12$...    │ 2024-01-01 │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  STRATEGIES table (5 rows):                                                │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ id      │ user_id │ strategy_text                                    │  │
+│  ├──────────────────────────────────────────────────────────────────────┤  │
+│  │ uuid-1  │ user-1  │ Buy when RSI < 30                                │  │
+│  │ uuid-2  │ user-1  │ Buy when MACD crosses above signal               │  │
+│  │ ...     │ ...     │ ...                                              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  BACKTESTS table (12 rows):                                                │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ id      │ user_id │ return_percent │ sharpe_ratio                    │  │
+│  ├──────────────────────────────────────────────────────────────────────┤  │
+│  │ uuid-10 │ user-1  │ 15.0           │ 1.45                           │  │
+│  │ uuid-11 │ user-1  │ 8.5            │ 0.95                           │  │
+│  │ uuid-12 │ user-1  │ 5.2            │ 0.75                           │  │
+│  │ ...     │ ...     │ ...            │ ...                            │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+                        Data retrieved from PostgreSQL
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FRONTEND (Next.js/React) - Profile Page                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. Receive JSON response                                                 │
+│     └─ setProfile(data)                                                   │
+│                                                                             │
+│  2. Render profile page:                                                  │
+│     ├─ User card:                                                         │
+│     │  ├─ Name: "John Doe"                                               │
+│     │  ├─ Email: "john@example.com"                                      │
+│     │  └─ Member since: "January 1, 2024"                                │
+│     │                                                                    │
+│     └─ Statistics grid:                                                  │
+│        ├─ Total Strategies: 5                                            │
+│        ├─ Total Backtests: 12                                            │
+│        ├─ Average Return: 8.5%                                           │
+│        └─ Best Sharpe Ratio: 1.45                                        │
+│                                                                             │
+│  3. Navigation links:                                                     │
+│     ├─ "My Strategies" → /profile/strategies                             │
+│     └─ "Backtest History" → /profile/backtests                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+
+KEY POINTS
+================================================================================
+
+1. JWT AUTHENTICATION
+   ├─ Token stored in localStorage
+   ├─ Sent with every API request in Authorization header
+   └─ Backend verifies token before allowing access
+
+2. ASYNC DATABASE OPERATIONS
+   ├─ All DB operations are non-blocking
+   ├─ Multiple requests processed simultaneously
+   └─ Uses SQLAlchemy async ORM
+
+3. DATA PERSISTENCE
+   ├─ Session Storage: Temporary (backtest results for dashboard)
+   └─ Database: Permanent (user data, strategies, backtests)
+
+4. RELATIONSHIPS
+   ├─ User → Strategies (1-to-Many)
+   ├─ User → Backtests (1-to-Many)
+   ├─ Strategy → Backtests (1-to-Many)
+   ├─ Backtest → Trades (1-to-Many)
+   └─ Backtest → EquityCurve (1-to-Many)
+
+5. DATA FLOW
+   Frontend → Backend → Database → Backend → Frontend
+   (Request)  (Process) (Store)   (Retrieve) (Render)
+
+================================================================================

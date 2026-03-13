@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import StrategyInput from '@/components/StrategyInput'
+import ProfileCard from '@/components/ProfileCard'
 import api, { StrategyExample, BacktestResponse } from '@/lib/api'
 import { AlertCircle, CheckCircle } from 'lucide-react'
 
@@ -75,10 +76,13 @@ export default function Home() {
                 Test your trading strategies with historical data
               </p>
             </div>
-            <div className="hidden md:block text-right">
-              <p className="text-sm text-slate-400">
-                Powered by FastAPI & Next.js
-              </p>
+            <div className="flex items-center gap-4">
+              <div className="hidden md:block text-right">
+                <p className="text-sm text-slate-400">
+                  Powered by FastAPI & Next.js
+                </p>
+              </div>
+              <ProfileCard />
             </div>
           </div>
         </div>

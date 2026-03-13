@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import ProfileCard from '@/components/ProfileCard'
 import MetricsCard from '@/components/MetricsCard'
 import EquityChart from '@/components/EquityChart'
 import TradesTable from '@/components/TradesTable'
@@ -186,6 +187,7 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <ProfileCard />
               <button
                 onClick={() => setShowImprovementModal(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded-lg border border-yellow-500/30 transition-colors"
@@ -478,7 +480,7 @@ export default function DashboardPage() {
                         let maxConsecutive = 0
                         let current = 0
                         results.trades.forEach((trade) => {
-                          if (trade.pnl > 0) {
+                          if ((trade.pnl ?? 0) > 0) {
                             current++
                             maxConsecutive = Math.max(maxConsecutive, current)
                           } else {
@@ -497,7 +499,7 @@ export default function DashboardPage() {
                         let maxConsecutive = 0
                         let current = 0
                         results.trades.forEach((trade) => {
-                          if (trade.pnl < 0) {
+                          if ((trade.pnl ?? 0) < 0) {
                             current++
                             maxConsecutive = Math.max(maxConsecutive, current)
                           } else {

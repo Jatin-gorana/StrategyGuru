@@ -70,7 +70,67 @@ const apiClient = axios.create({
   timeout: 60000,
 })
 
+// Add token to requests if available
+apiClient.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+  }
+  return config
+})
+
 export const api = {
+  // Authentication
+  register: async (name: string, email: string, password: string) => {
+    const response = await apiClient.post('/api/users/register', {
+      name,
+      email,
+      password,
+    })
+    if (response.data.access_token) {
+      localStorage.setItem('access_token', response.data.access_token)
+    }
+    return response.data
+  },
+
+  login: async (email: string, password: string) => {
+    const response = await apiClient.post('/api/users/login', {
+      email,
+      password,
+    })
+    if (response.data.access_token) {
+      localStorage.setItem('access_token', response.data.access_token)
+    }
+    return response.data
+  },
+
+  logout: () => {
+    localStorage.removeItem('access_token')
+  },
+
+  // User Profile
+  getProfile: async () => {
+    const response = await apiClient.get('/api/users/profile')
+    return response.data
+  },
+
+  getStrategies: async () => {
+    const response = await apiClient.get('/api/users/strategies')
+    return response.data
+  },
+
+  getBacktests: async () => {
+    const response = await apiClient.get('/api/users/backtests')
+    return response.data
+  },
+
+  getBacktestDetail: async (backtestId: string) => {
+    const response = await apiClient.get(`/api/users/backtests/${backtestId}`)
+    return response.data
+  },
+
   runBacktest: async (request: BacktestRequest): Promise<BacktestResponse> => {
     try {
       console.log('Running backtest with request:', request)

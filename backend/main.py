@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import backtest
+from routers import backtest, users
+from database.database import init_db, close_db
 from dotenv import load_dotenv
 import os
 
@@ -22,10 +23,25 @@ app.add_middleware(
 )
 
 app.include_router(backtest.router, prefix="/api", tags=["backtest"])
+app.include_router(users.router, prefix="/api", tags=["users"])
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    await init_db()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connection on shutdown"""
+    await close_db()
+
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
 
 if __name__ == "__main__":
     import uvicorn

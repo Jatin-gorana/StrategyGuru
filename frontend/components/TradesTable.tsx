@@ -164,18 +164,18 @@ export default function TradesTable({ trades }: TradesTableProps) {
                 </td>
                 <td
                   className={`px-6 py-4 text-sm font-semibold text-right ${
-                    trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'
+                    (trade.pnl ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                   }`}
                 >
-                  {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}
+                  {(trade.pnl ?? 0) >= 0 ? '+' : ''}${(trade.pnl ?? 0).toFixed(2)}
                 </td>
                 <td
                   className={`px-6 py-4 text-sm font-semibold text-right ${
-                    trade.pnl_percent >= 0 ? 'text-green-400' : 'text-red-400'
+                    (trade.pnl_percent ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
                   }`}
                 >
-                  {trade.pnl_percent >= 0 ? '+' : ''}
-                  {trade.pnl_percent.toFixed(2)}%
+                  {(trade.pnl_percent ?? 0) >= 0 ? '+' : ''}
+                  {(trade.pnl_percent ?? 0).toFixed(2)}%
                 </td>
               </tr>
             ))}
