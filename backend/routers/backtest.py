@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from models.request_models import BacktestRequest
 from models.response_models import BacktestResponse, Trade, EquityCurvePoint, BacktestMetrics
@@ -389,3 +389,61 @@ def _evaluate_condition(df, condition_text: str):
     # Default: no signal
     logger.warning(f"Could not parse condition: {condition_text}")
     return df.index.to_series().apply(lambda x: False)
+
+
+@router.post("/backtest/improve-strategy")
+async def improve_strategy(
+    strategy_text: str,
+    metrics: Dict[str, Any],
+    trades_count: int = 0
+):
+    """
+    Get LLM suggestions to improve a trading strategy.
+    
+    Args:
+        strategy_text: Current strategy description
+        metrics: Backtest metrics dictionary
+        trades_count: Number of trades executed
+    
+    Returns:
+        Strategy improvement suggestions
+    """
+    try:
+        logger.info(f"Improving strategy: {strategy_text[:50]}...")
+        
+        from services.strategy_improver import StrategyImprover
+        
+        # Try OpenAI first, fall back to Gemini
+        try:
+            improver = StrategyImprover(provider='openai')
+        except ValueError:
+            try:
+                improver = StrategyImprover(provider='gemini')
+            except ValueError:
+                raise ValueError(
+                    "No LLM API key configured. Set OPENAI_API_KEY or GOOGLE_API_KEY environment variable."
+                )
+        
+        improvement = improver.improve_strategy(
+            strategy_text=strategy_text,
+            metrics=metrics,
+            trades_count=trades_count
+        )
+        
+        logger.info("Strategy improvement generated successfully")
+        
+        return {
+            "success": True,
+            "original_strategy": improvement.original_strategy,
+            "improved_strategy": improvement.improved_strategy,
+            "improvements": improvement.improvements,
+            "reasoning": improvement.reasoning,
+            "risk_level": improvement.risk_level
+        }
+    
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Strategy improvement error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to improve strategy: {str(e)}")

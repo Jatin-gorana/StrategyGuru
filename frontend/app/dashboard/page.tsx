@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MetricsCard from '@/components/MetricsCard'
@@ -8,6 +8,7 @@ import EquityChart from '@/components/EquityChart'
 import TradesTable from '@/components/TradesTable'
 import PerformanceChart from '@/components/PerformanceChart'
 import DrawdownChart from '@/components/DrawdownChart'
+import StrategyImprovementModal from '@/components/StrategyImprovementModal'
 import {
   BacktestResponse,
   BacktestMetrics,
@@ -23,6 +24,7 @@ import {
   AlertCircle,
   Download,
   RefreshCw,
+  Lightbulb,
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -31,6 +33,8 @@ export default function DashboardPage() {
   const [params, setParams] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview' | 'trades' | 'analysis'>('overview')
+  const [showImprovementModal, setShowImprovementModal] = useState(false)
+  const [improvedStrategy, setImprovedStrategy] = useState<string | null>(null)
 
   useEffect(() => {
     const resultsData = sessionStorage.getItem('backtest_results')
@@ -129,6 +133,13 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowImprovementModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded-lg border border-yellow-500/30 transition-colors"
+              >
+                <Lightbulb className="w-4 h-4" />
+                Improve Strategy
+              </button>
               <button
                 onClick={handleDownload}
                 className="flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/80 text-white rounded-lg border border-slate-700 transition-colors"
@@ -509,6 +520,19 @@ export default function DashboardPage() {
           <p>© 2024 Trading Strategy Backtester. All rights reserved.</p>
         </div>
       </footer>
+
+      {/* Strategy Improvement Modal */}
+      <StrategyImprovementModal
+        isOpen={showImprovementModal}
+        onClose={() => setShowImprovementModal(false)}
+        strategyText={improvedStrategy || params?.strategy_text || ''}
+        metrics={results?.metrics || ({} as BacktestMetrics)}
+        tradesCount={results?.trades.length || 0}
+        onApplyImprovement={(improved) => {
+          setImprovedStrategy(improved)
+          // Optionally auto-run backtest with improved strategy
+        }}
+      />
     </main>
   )
 }

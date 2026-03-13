@@ -40,6 +40,15 @@ export interface BacktestMetrics {
   profit_factor: number
 }
 
+export interface StrategyImprovement {
+  success: boolean
+  original_strategy: string
+  improved_strategy: string
+  improvements: string[]
+  reasoning: string
+  risk_level: string
+}
+
 export interface BacktestResponse {
   success: boolean
   message: string
@@ -81,6 +90,19 @@ export const api = {
 
   getExamples: async (): Promise<{ success: boolean; examples: StrategyExample[] }> => {
     const response = await apiClient.get('/api/backtest/examples')
+    return response.data
+  },
+
+  improveStrategy: async (
+    strategyText: string,
+    metrics: BacktestMetrics,
+    tradesCount: number
+  ): Promise<StrategyImprovement> => {
+    const response = await apiClient.post('/api/backtest/improve-strategy', {
+      strategy_text: strategyText,
+      metrics: metrics,
+      trades_count: tradesCount,
+    })
     return response.data
   },
 
