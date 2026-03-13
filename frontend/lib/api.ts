@@ -72,8 +72,15 @@ const apiClient = axios.create({
 
 export const api = {
   runBacktest: async (request: BacktestRequest): Promise<BacktestResponse> => {
-    const response = await apiClient.post('/api/backtest', request)
-    return response.data
+    try {
+      console.log('Running backtest with request:', request)
+      const response = await apiClient.post('/api/backtest', request)
+      console.log('Backtest response received:', response.data)
+      return response.data
+    } catch (error: any) {
+      console.error('Backtest error:', error)
+      throw error
+    }
   },
 
   parseStrategy: async (strategyText: string) => {
@@ -104,9 +111,11 @@ export const api = {
         metrics: metrics,
         trades_count: tradesCount,
       })
+      console.log('Improve strategy response:', response.data)
       return response.data
     } catch (error: any) {
       // Handle error response
+      console.error('Improve strategy error:', error)
       if (error.response?.data?.detail) {
         throw new Error(error.response.data.detail)
       }

@@ -9,10 +9,9 @@ import TradesTable from '@/components/TradesTable'
 import PerformanceChart from '@/components/PerformanceChart'
 import DrawdownChart from '@/components/DrawdownChart'
 import StrategyImprovementModal from '@/components/StrategyImprovementModal'
-import {
+import api, {
   BacktestResponse,
   BacktestMetrics,
-  EquityCurvePoint,
 } from '@/lib/api'
 import {
   ArrowLeft,
@@ -25,6 +24,7 @@ import {
   Download,
   RefreshCw,
   Lightbulb,
+  Loader2,
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -32,9 +32,9 @@ export default function DashboardPage() {
   const [results, setResults] = useState<BacktestResponse | null>(null)
   const [params, setParams] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRunningBacktest, setIsRunningBacktest] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'trades' | 'analysis'>('overview')
   const [showImprovementModal, setShowImprovementModal] = useState(false)
-  const [improvedStrategy, setImprovedStrategy] = useState<string | null>(null)
 
   useEffect(() => {
     const resultsData = sessionStorage.getItem('backtest_results')
@@ -107,6 +107,59 @@ export default function DashboardPage() {
     document.body.appendChild(element)
     element.click()
     document.body.removeChild(element)
+  }
+
+  const handleApplyImprovement = async (improvedStrategyText: string) => {
+    setShowImprovementModal(false)
+    setIsRunningBacktest(true)
+
+    try {
+      console.log('Applying improved strategy:', improvedStrategyText)
+      console.log('Request params:', {
+        strategy_text: improvedStrategyText,
+        stock_symbol: params.stock_symbol,
+        start_date: params.start_date,
+        end_date: params.end_date,
+        initial_capital: params.initial_capital,
+      })
+
+      const response = await api.runBacktest({
+        strategy_text: improvedStrategyText,
+        stock_symbol: params.stock_symbol,
+        start_date: params.start_date,
+        end_date: params.end_date,
+        initial_capital: params.initial_capital,
+      })
+
+      console.log('Backtest response:', response)
+
+      if (!response || !response.metrics) {
+        throw new Error('Invalid response from backtest API')
+      }
+
+      // Update results and params with the improved strategy
+      const updatedParams = {
+        ...params,
+        strategy_text: improvedStrategyText,
+      }
+
+      setResults(response)
+      setParams(updatedParams)
+
+      // Store in session storage
+      sessionStorage.setItem('backtest_results', JSON.stringify(response))
+      sessionStorage.setItem('backtest_params', JSON.stringify(updatedParams))
+
+      console.log('Dashboard updated with improved strategy results')
+
+      // Reset to overview tab to show new results
+      setActiveTab('overview')
+    } catch (error) {
+      console.error('Failed to run backtest with improved strategy:', error)
+      alert(`Failed to run backtest with improved strategy: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsRunningBacktest(false)
+    }
   }
 
   return (
@@ -525,14 +578,22 @@ export default function DashboardPage() {
       <StrategyImprovementModal
         isOpen={showImprovementModal}
         onClose={() => setShowImprovementModal(false)}
-        strategyText={improvedStrategy || params?.strategy_text || ''}
+        strategyText={params?.strategy_text || ''}
         metrics={results?.metrics || ({} as BacktestMetrics)}
         tradesCount={results?.trades.length || 0}
-        onApplyImprovement={(improved) => {
-          setImprovedStrategy(improved)
-          // Optionally auto-run backtest with improved strategy
-        }}
+        onApplyImprovement={handleApplyImprovement}
       />
+
+      {/* Loading Overlay for Backtest */}
+      {isRunningBacktest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-secondary border border-slate-700 rounded-lg p-8 text-center">
+            <Loader2 className="w-12 h-12 text-accent animate-spin mx-auto mb-4" />
+            <p className="text-white font-semibold">Running backtest with improved strategy...</p>
+            <p className="text-slate-400 text-sm mt-2">This may take a moment</p>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
