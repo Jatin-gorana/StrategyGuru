@@ -31,13 +31,24 @@ export default function StrategyImprovementModal({
     setError('')
 
     try {
+      // Check authentication before making request
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        setError('Please login to improve strategies')
+        setIsLoading(false)
+        return
+      }
+
       const result = await api.improveStrategy(strategyText, metrics, tradesCount)
       setImprovement(result)
     } catch (err: any) {
       // Extract error message safely
       let errorMessage = 'Failed to improve strategy'
       
-      if (err.response?.data?.detail) {
+      if (err.response?.status === 401) {
+        errorMessage = 'Your session has expired. Please login again.'
+        localStorage.removeItem('access_token')
+      } else if (err.response?.data?.detail) {
         errorMessage = err.response.data.detail
       } else if (err.message) {
         errorMessage = err.message

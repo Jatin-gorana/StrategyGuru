@@ -115,6 +115,14 @@ export default function DashboardPage() {
     setIsRunningBacktest(true)
 
     try {
+      // Check authentication before making request
+      const token = localStorage.getItem('access_token')
+      if (!token) {
+        alert('Your session has expired. Please login again.')
+        window.location.href = '/login'
+        return
+      }
+
       console.log('Applying improved strategy:', improvedStrategyText)
       console.log('Request params:', {
         strategy_text: improvedStrategyText,
@@ -157,7 +165,15 @@ export default function DashboardPage() {
       setActiveTab('overview')
     } catch (error) {
       console.error('Failed to run backtest with improved strategy:', error)
-      alert(`Failed to run backtest with improved strategy: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      
+      // Handle 401 errors
+      if (error instanceof Error && error.message.includes('401')) {
+        alert('Your session has expired. Please login again.')
+        localStorage.removeItem('access_token')
+        window.location.href = '/login'
+      } else {
+        alert(`Failed to run backtest with improved strategy: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
     } finally {
       setIsRunningBacktest(false)
     }

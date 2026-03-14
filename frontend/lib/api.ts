@@ -76,10 +76,30 @@ apiClient.interceptors.request.use((config) => {
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    } else {
+      // Log warning if token is missing for authenticated endpoints
+      if (config.url && (config.url.includes('/backtest') || config.url.includes('/users'))) {
+        console.warn('No access token found in localStorage for authenticated request:', config.url)
+      }
     }
   }
   return config
 })
+
+// Handle 401 errors by redirecting to login
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Clear token and redirect to login
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('access_token')
+        window.location.href = '/login?error=session_expired'
+      }
+    }
+    return Promise.reject(error)
+  }
+)
 
 export const api = {
   // Authentication
@@ -133,6 +153,16 @@ export const api = {
 
   runBacktest: async (request: BacktestRequest): Promise<BacktestResponse> => {
     try {
+      // Check if user is authenticated
+      if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('access_token')
+        if (!token) {
+          console.error('No access token found. Redirecting to login.')
+          window.location.href = '/login?error=not_authenticated'
+          throw new Error('Please login to run backtests')
+        }
+      }
+
       console.log('Running backtest with request:', request)
       const response = await apiClient.post('/api/backtest', request)
       console.log('Backtest response received:', response.data)
@@ -166,6 +196,16 @@ export const api = {
     tradesCount: number
   ): Promise<StrategyImprovement> => {
     try {
+      // Check if user is authenticated
+      if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('access_token')
+        if (!token) {
+          console.error('No access token found. Redirecting to login.')
+          window.location.href = '/login?error=not_authenticated'
+          throw new Error('Please login to improve strategies')
+        }
+      }
+
       const response = await apiClient.post('/api/backtest/improve-strategy', {
         strategy_text: strategyText,
         metrics: metrics,
