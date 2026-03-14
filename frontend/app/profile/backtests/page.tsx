@@ -21,6 +21,7 @@ export default function BacktestsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [sortBy, setSortBy] = useState<'date' | 'return' | 'sharpe'>('date')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const fetchBacktests = async () => {
@@ -50,6 +51,25 @@ export default function BacktestsPage() {
     }
     return 0
   })
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  const handleCompare = () => {
+    if (selectedIds.size >= 2) {
+      const idsParam = Array.from(selectedIds).join(',')
+      router.push(`/profile/backtests/compare?ids=${idsParam}`)
+    }
+  }
 
   if (loading) {
     return (
@@ -111,6 +131,18 @@ export default function BacktestsPage() {
           >
             Best Sharpe
           </button>
+          <div className="flex-1" />
+          <button
+            onClick={handleCompare}
+            disabled={selectedIds.size < 2}
+            className={`px-4 py-2 rounded-lg transition-colors ${
+              selectedIds.size >= 2
+                ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            Compare Selected ({selectedIds.size})
+          </button>
         </div>
 
         {backtests.length === 0 ? (
@@ -125,6 +157,7 @@ export default function BacktestsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-700">
+                  <th className="text-left px-4 py-3 text-slate-400 font-semibold w-10"></th>
                   <th className="text-left px-4 py-3 text-slate-400 font-semibold">Stock</th>
                   <th className="text-left px-4 py-3 text-slate-400 font-semibold">Return</th>
                   <th className="text-left px-4 py-3 text-slate-400 font-semibold">Sharpe Ratio</th>
@@ -137,6 +170,14 @@ export default function BacktestsPage() {
               <tbody>
                 {sortedBacktests.map((backtest) => (
                   <tr key={backtest.id} className="border-b border-slate-700 hover:bg-slate-800/50">
+                    <td className="px-4 py-3">
+                      <input 
+                        type="checkbox"
+                        checked={selectedIds.has(backtest.id)}
+                        onChange={() => toggleSelection(backtest.id)}
+                        className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-slate-800"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-white font-semibold">{backtest.stock_symbol}</td>
                     <td className={`px-4 py-3 font-semibold ${backtest.return_percent && backtest.return_percent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {backtest.return_percent ? `${backtest.return_percent.toFixed(2)}%` : 'N/A'}
