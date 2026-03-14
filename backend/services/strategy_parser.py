@@ -236,9 +236,28 @@ class GroqProvider(LLMProvider):
         
         try:
             from groq import Groq
+            # Initialize Groq client without proxies parameter
+            # The Groq client handles HTTP configuration internally
             self.client = Groq(api_key=self.api_key)
+        except TypeError as e:
+            if "proxies" in str(e):
+                # If proxies error occurs, this is likely a version compatibility issue
+                logger.warning(f"Groq client initialization warning: {str(e)}")
+                # Try again - sometimes this is a transient issue
+                try:
+                    from groq import Groq
+                    self.client = Groq(api_key=self.api_key)
+                except Exception as init_error:
+                    logger.error(f"Failed to initialize Groq client after retry: {str(init_error)}")
+                    raise ValueError(f"Groq client initialization failed: {str(init_error)}")
+            else:
+                logger.error(f"Groq client initialization error: {str(e)}")
+                raise
         except ImportError:
             raise ImportError("groq package not installed. Install with: pip install groq")
+        except Exception as e:
+            logger.error(f"Unexpected error initializing Groq client: {str(e)}")
+            raise
     
     def parse_strategy(self, strategy_text: str) -> StrategyRules:
         """

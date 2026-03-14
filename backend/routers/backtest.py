@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from datetime import datetime, date
 import logging
+import os
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -549,19 +550,25 @@ async def improve_strategy(request: ImproveStrategyRequest):
             raise ValueError("metrics is required")
         
         logger.info(f"Improving strategy: {strategy_text[:50]}...")
+        logger.info(f"GROQ_API_KEY is set: {'GROQ_API_KEY' in os.environ}")
         
         from services.strategy_improver import StrategyImprover
         
         # Use Groq as the primary (and only) provider
         try:
+            logger.info("Initializing StrategyImprover with Groq provider")
             improver = StrategyImprover(provider='groq')
-            logger.info("Using Groq for strategy improvement")
+            logger.info("StrategyImprover initialized successfully")
         except ValueError as e:
             logger.error(f"Groq not available: {str(e)}")
             raise ValueError(
                 "Groq API key not configured. Set GROQ_API_KEY environment variable."
             )
+        except Exception as e:
+            logger.error(f"Failed to initialize StrategyImprover: {str(e)}", exc_info=True)
+            raise
         
+        logger.info("Calling improve_strategy method")
         improvement = improver.improve_strategy(
             strategy_text=strategy_text,
             metrics=metrics,
