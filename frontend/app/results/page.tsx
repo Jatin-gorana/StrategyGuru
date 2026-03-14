@@ -8,9 +8,6 @@ import EquityChart from '@/components/EquityChart'
 import TradesTable from '@/components/TradesTable'
 import {
   BacktestResponse,
-  Trade,
-  BacktestMetrics,
-  EquityCurvePoint,
 } from '@/lib/api'
 import {
   ArrowLeft,
@@ -171,7 +168,6 @@ export default function ResultsPage() {
         <div className="mb-8">
           <EquityChart
             data={results.equity_curve}
-            initialCapital={params.initial_capital}
           />
         </div>
 

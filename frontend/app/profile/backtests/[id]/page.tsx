@@ -89,17 +89,6 @@ export default function BacktestDetailPage() {
     return null
   }
 
-  // Calculate drawdown from equity curve
-  let maxEquity = 0
-  const drawdownData = backtest.equity_curve.map((point) => {
-    maxEquity = Math.max(maxEquity, point.equity_value)
-    const drawdown = ((maxEquity - point.equity_value) / maxEquity) * 100
-    return {
-      date: point.date,
-      drawdown: Math.max(0, drawdown),
-    }
-  })
-
   return (
     <div className="min-h-screen bg-slate-900 p-8">
       <div className="max-w-7xl mx-auto">
@@ -124,21 +113,20 @@ export default function BacktestDetailPage() {
         {/* Metrics Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <MetricsCard
-            label="Total Return"
+            title="Total Return"
             value={backtest.total_return ? `$${backtest.total_return.toFixed(2)}` : 'N/A'}
-            change={backtest.return_percent}
+            subtitle={backtest.return_percent ? `${backtest.return_percent.toFixed(2)}%` : undefined}
           />
           <MetricsCard
-            label="Sharpe Ratio"
+            title="Sharpe Ratio"
             value={backtest.sharpe_ratio ? backtest.sharpe_ratio.toFixed(2) : 'N/A'}
           />
           <MetricsCard
-            label="Max Drawdown"
+            title="Max Drawdown"
             value={backtest.max_drawdown_percent ? `${backtest.max_drawdown_percent.toFixed(2)}%` : 'N/A'}
-            change={backtest.max_drawdown_percent ? -backtest.max_drawdown_percent : undefined}
           />
           <MetricsCard
-            label="Win Rate"
+            title="Win Rate"
             value={backtest.win_rate ? `${(backtest.win_rate * 100).toFixed(1)}%` : 'N/A'}
           />
         </div>
@@ -147,19 +135,19 @@ export default function BacktestDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
             <h2 className="text-xl font-bold text-white mb-4">Equity Curve</h2>
-            <EquityChart data={backtest.equity_curve} />
+            <EquityChart data={backtest.equity_curve.map(pt => ({ ...pt, equity: pt.equity_value }))} />
           </div>
 
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
             <h2 className="text-xl font-bold text-white mb-4">Drawdown</h2>
-            <DrawdownChart data={drawdownData} />
+            <DrawdownChart equityCurve={backtest.equity_curve.map(pt => ({ ...pt, equity: pt.equity_value }))} />
           </div>
         </div>
 
         {/* Trades Table */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
           <h2 className="text-xl font-bold text-white mb-4">Trades ({backtest.trades.length})</h2>
-          <TradesTable trades={backtest.trades} />
+          <TradesTable trades={backtest.trades.map(t => ({ ...t, pnl: t.profit, pnl_percent: t.profit_percent, quantity: 1 }))} />
         </div>
       </div>
     </div>

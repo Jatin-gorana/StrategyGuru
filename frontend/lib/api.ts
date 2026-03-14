@@ -65,6 +65,15 @@ export interface StrategyExample {
   risk_level: string
 }
 
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatResponse {
+  response: string
+}
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 60000,
@@ -185,6 +194,15 @@ export const api = {
 
   healthCheck: async () => {
     const response = await apiClient.get('/health')
+    return response.data
+  },
+
+  chat: async (messages: ChatMessage[], contextData?: string): Promise<ChatResponse> => {
+    const payload: any = { messages }
+    if (contextData) {
+      payload.context_data = contextData
+    }
+    const response = await apiClient.post('/api/chat', payload)
     return response.data
   },
 }

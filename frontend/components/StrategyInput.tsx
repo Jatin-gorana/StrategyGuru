@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Play, Loader2, AlertCircle } from 'lucide-react'
-import api, { StrategyExample } from '@/lib/api'
+import { StrategyExample } from '@/lib/api'
 
 interface StrategyInputProps {
   onSubmit: (data: {
@@ -65,6 +65,22 @@ export default function StrategyInput({
     setStrategyText(example.strategy)
   }
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const strategy = e.dataTransfer.getData('text/plain')
+    if (strategy) {
+      setStrategyText((prev) => prev + (prev && prev.endsWith('\n') ? '' : '\n') + strategy)
+    }
+  }
+
+  const handleDragStart = (e: React.DragEvent, strategy: string) => {
+    e.dataTransfer.setData('text/plain', strategy)
+  }
+
   return (
     <div className="w-full max-w-4xl mx-auto">
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -76,8 +92,10 @@ export default function StrategyInput({
           <textarea
             value={strategyText}
             onChange={(e) => setStrategyText(e.target.value)}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
             placeholder="e.g., Buy when RSI < 30 and sell when RSI > 70"
-            className="w-full h-24 px-4 py-3 bg-secondary border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:border-accent focus:ring-2 focus:ring-accent/20 resize-none"
+            className="w-full h-40 px-4 py-3 bg-[#0B0E14] border border-slate-700 rounded-lg text-accent font-mono placeholder-slate-600 focus:border-accent focus:ring-1 focus:ring-accent outline-none resize-none"
             disabled={isLoading}
           />
           <p className="text-xs text-slate-400">
@@ -96,13 +114,18 @@ export default function StrategyInput({
                 <button
                   key={example.name}
                   type="button"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, example.strategy)}
                   onClick={() => loadExample(example)}
-                  className="text-left p-3 bg-secondary/50 hover:bg-secondary border border-slate-700 rounded-lg transition-colors"
+                  className="text-left p-3 bg-secondary/50 hover:bg-secondary cursor-grab active:cursor-grabbing border border-slate-700 rounded-lg transition-colors border-dashed hover:border-accent/50"
                   disabled={isLoading}
                 >
-                  <p className="text-xs font-semibold text-accent">
-                    {example.name}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-accent">
+                      {example.name}
+                    </p>
+                    <span className="text-[10px] text-slate-500 hidden md:block">(Drag me)</span>
+                  </div>
                   <p className="text-xs text-slate-400 mt-1 line-clamp-1">
                     {example.strategy}
                   </p>
@@ -187,7 +210,7 @@ export default function StrategyInput({
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-accent to-blue-600 hover:from-blue-600 hover:to-accent text-white font-semibold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-accent hover:bg-[#00e67a] text-[#0B0E14] font-bold tracking-wide uppercase rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
           {isLoading ? (
             <>

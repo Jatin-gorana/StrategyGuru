@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import GlobalAIAssistant from '@/components/GlobalAIAssistant'
 
 export const metadata: Metadata = {
   title: 'Trading Strategy Backtester',
@@ -16,10 +17,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-gradient-to-br from-primary via-secondary to-primary">
+      <body className="bg-primary text-white font-sans antialiased">
         <div className="min-h-screen">
           {children}
         </div>
+        <GlobalAIAssistant />
       </body>
     </html>
   )

@@ -7,7 +7,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts'
 import { Trade } from '@/lib/api'
@@ -19,8 +18,8 @@ interface PerformanceChartProps {
 export default function PerformanceChart({ trades }: PerformanceChartProps) {
   if (!trades || trades.length === 0) {
     return (
-      <div className="w-full h-96 flex items-center justify-center bg-secondary/50 border border-slate-700 rounded-lg">
-        <p className="text-slate-400">No trades to display</p>
+      <div className="w-full h-[300px] flex items-center justify-center">
+        <p className="text-slate-500 font-mono text-xs uppercase tracking-wider">No trades to display</p>
       </div>
     )
   }
@@ -57,16 +56,16 @@ export default function PerformanceChart({ trades }: PerformanceChartProps) {
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-primary border border-slate-700 rounded-lg p-3 shadow-lg">
-          <p className="text-sm text-slate-400">{payload[0].payload.month}</p>
-          <p className="text-sm font-semibold text-green-400">
-            Wins: {payload[0].payload.wins}
+        <div className="bg-[#0B0E14] border border-slate-800 rounded p-3 shadow-lg">
+          <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">{payload[0].payload.month}</p>
+          <p className="text-xs font-mono font-bold text-accent mt-1">
+            WINS: {payload[0].payload.wins}
           </p>
-          <p className="text-sm font-semibold text-red-400">
-            Losses: {payload[0].payload.losses}
+          <p className="text-xs font-mono font-bold text-danger">
+            LOSSES: {payload[0].payload.losses}
           </p>
-          <p className="text-sm font-semibold text-accent">
-            Profit: ${payload[0].payload.profit.toLocaleString()}
+          <p className="text-xs font-mono font-bold text-white mt-1">
+            PROFIT: ${payload[0].payload.profit.toLocaleString()}
           </p>
         </div>
       )
@@ -75,31 +74,28 @@ export default function PerformanceChart({ trades }: PerformanceChartProps) {
   }
 
   return (
-    <div className="w-full bg-secondary/50 border border-slate-700 rounded-lg p-6">
-      <h3 className="text-lg font-semibold text-white mb-4">Monthly Performance</h3>
-      <ResponsiveContainer width="100%" height={300}>
+    <div className="w-full h-[300px]">
+      <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
           <XAxis
             dataKey="month"
-            stroke="#94a3b8"
-            style={{ fontSize: '12px' }}
+            stroke="#475569"
+            style={{ fontSize: '10px', fontFamily: 'monospace' }}
+            tick={{ fill: '#64748b' }}
+            tickMargin={10}
+            axisLine={false}
+            tickLine={false}
           />
           <YAxis
-            stroke="#94a3b8"
-            style={{ fontSize: '12px' }}
+            stroke="#475569"
+            style={{ fontSize: '10px', fontFamily: 'monospace' }}
+            tick={{ fill: '#64748b' }}
+            axisLine={false}
+            tickLine={false}
           />
-          <Tooltip content={<CustomTooltip />} />
-          <Legend
-            wrapperStyle={{ paddingTop: '20px' }}
-            contentStyle={{
-              backgroundColor: '#1e293b',
-              border: '1px solid #475569',
-              borderRadius: '8px',
-            }}
-            labelStyle={{ color: '#cbd5e1' }}
-          />
-          <Bar dataKey="wins" stackId="a" fill="#10b981" name="Winning Trades" />
+          <Tooltip content={<CustomTooltip />} cursor={{ fill: '#1e293b' }} />
+          <Bar dataKey="wins" stackId="a" fill="#00FF88" name="Winning Trades" />
           <Bar dataKey="losses" stackId="a" fill="#ef4444" name="Losing Trades" />
         </BarChart>
       </ResponsiveContainer>

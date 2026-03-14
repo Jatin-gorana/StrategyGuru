@@ -36,7 +36,7 @@ export default function MetricsCard({
 
   return (
     <div
-      className={`p-6 bg-gradient-to-br from-secondary to-secondary/50 border border-slate-700 rounded-lg hover:border-accent/50 transition-all ${className}`}
+      className={`p-6 bg-secondary border border-slate-800 rounded-xl hover:border-accent/50 transition-all flex flex-col justify-between ${className}`}
     >
       <div className="flex items-start justify-between mb-4">
         <div>

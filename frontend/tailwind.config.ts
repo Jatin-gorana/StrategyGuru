@@ -8,12 +8,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: '#0f172a',
-        secondary: '#1e293b',
-        accent: '#3b82f6',
-        success: '#10b981',
-        danger: '#ef4444',
-        warning: '#f59e0b',
+        primary: '#0B0E14',
+        secondary: '#151924',
+        accent: '#00FF88',
+        success: '#00FF88',
+        danger: '#FF3366',
+        warning: '#FFB800',
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',
