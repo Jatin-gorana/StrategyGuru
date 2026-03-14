@@ -8,6 +8,7 @@ from models.request_models import BacktestRequest, ImproveStrategyRequest
 from models.response_models import BacktestResponse, Trade, EquityCurvePoint, BacktestMetrics
 from services.data_fetcher import get_stock_data
 from services.strategy_parser import SimpleStrategyParser, StrategyParser, DSLConverter
+from services.signal_generator import evaluate_condition, preprocess_strategy_text
 from services.indicators import add_all_indicators
 from services.backtest_engine import BacktestEngine
 from services.dsl_sandbox import SandboxExecutor
@@ -83,80 +84,57 @@ async def run_backtest(
         logger.info("Calculating technical indicators")
         df = add_all_indicators(df)
         
-        # Step 3: Parse strategy and generate signals using smart routing
-        logger.info(f"Parsing strategy: {request.strategy_text[:50]}...")
-        
-        # SECURITY CHECK: Detect malicious patterns before processing
-        malicious_patterns = [
-            'import ', 'from ', 'exec(', 'eval(', '__import__',
-            'os.system', 'os.remove', 'os.rmdir', 'os.unlink',
-            'subprocess.', 'socket.', 'requests.', 'urllib.',
-            'open(', '.read(', '.write(', '.delete(',
-            'drop table', 'delete from', 'truncate',
-            '__getattr__', '__setattr__', '__delattr__',
-            'globals(', 'locals(', 'vars(', 'dir(',
-            'compile(', 'getattr(', 'setattr(', 'delattr(',
-            'lambda:', 'def ', 'class ', 'import',
-            'password =', 'secret =', 'token =', 'key =',
-            'db_password', 'db_secret', 'api_key', 'api_secret'
-        ]
-        
-        strategy_lower = request.strategy_text.lower()
-        for pattern in malicious_patterns:
-            if pattern in strategy_lower:
-                logger.error(f"SECURITY VIOLATION: Malicious pattern detected: {pattern}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Security violation: Malicious pattern detected in strategy. Pattern: '{pattern}' is not allowed."
-                )
-        
-        # SMART ROUTING: Detect complex keywords to decide which parser to use
-        complex_keywords = [
-            'break', 'breakout', 'cross', 'crosses', 'touch', 'touches',
-            'volume', 'high volume', 'low volume', 'increasing volume', 'decreasing volume',
-            'support', 'resistance', 'trend', 'momentum', 'divergence',
-            'confirmation', 'filter', 'condition'
-        ]
-        
-        is_complex_strategy = any(keyword in strategy_lower for keyword in complex_keywords)
-        
+        # Step 3: Parse strategy and generate signals using robust NLP signal generator
+        logger.info(f"[STRATEGY] Raw input: '{request.strategy_text}'")
+
+        # Pre-process natural language keywords to standard form
+        processed_text = preprocess_strategy_text(request.strategy_text)
+        logger.info(f"[STRATEGY] After preprocess: '{processed_text}'")
+
+        # Parse buy/sell conditions using SimpleStrategyParser (regex-based)
         try:
-            if is_complex_strategy:
-                # Complex strategy → Use Groq LLM parser (primary provider)
-                logger.info("🧠 Complex strategy detected, using Groq LLM parser for better understanding")
-                strategy_rules = _parse_strategy(request.strategy_text)
-                buy_condition, sell_condition = _generate_signals(df, strategy_rules)
-                logger.info("✅ Using Groq LLM parser (SMART ROUTING - COMPLEX)")
-            else:
-                # Simple strategy → Use DSL (fast and secure)
-                logger.info("⚡ Simple strategy detected, using DSL parser for speed")
-                dsl_text = DSLConverter.to_dsl(request.strategy_text)
-                logger.info(f"Converted to DSL: {dsl_text[:100]}...")
-                
-                strategy_ast = parse_dsl(dsl_text)
-                sandbox = SandboxExecutor(df)
-                buy_condition, sell_condition = sandbox.execute(strategy_ast)
-                logger.info("✅ Using DSL sandbox executor (SMART ROUTING - SIMPLE)")
+            strategy_rules = _parse_strategy(request.strategy_text)
+            logger.info(f"[PARSED] buy_condition='{strategy_rules.buy_condition}'")
+            logger.info(f"[PARSED] sell_condition='{strategy_rules.sell_condition}'")
+        except Exception as parse_err:
+            logger.error(f"[PARSE ERROR] {parse_err}")
+            raise HTTPException(status_code=400, detail=f"Could not parse strategy: {parse_err}")
+
+        # Validate we got at least a buy condition
+        if not strategy_rules.buy_condition or not strategy_rules.buy_condition.strip():
+            logger.error(f"[EMPTY BUY] Parser extracted empty buy_condition from: '{request.strategy_text}'")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not extract buy condition from your strategy. "
+                       f"Please start with 'Buy when...' or 'Enter long when...'"
+            )
+
+        # Generate buy/sell signals using our robust NLP evaluator
+        try:
+            logger.info(f"[SIGNAL GEN] Evaluating buy: '{strategy_rules.buy_condition}'")
+            buy_condition = evaluate_condition(df, strategy_rules.buy_condition)
+            logger.info(f"[SIGNAL GEN] buy signals count: {buy_condition.sum()}")
+
+            logger.info(f"[SIGNAL GEN] Evaluating sell: '{strategy_rules.sell_condition}'")
+            sell_condition = evaluate_condition(df, strategy_rules.sell_condition)
+            logger.info(f"[SIGNAL GEN] sell signals count: {sell_condition.sum()}")
+
+            # Log DataFrame columns for debugging
+            logger.info(f"[DF COLUMNS] {list(df.columns)}")
+            logger.info(f"[DF SHAPE] {df.shape}")
+            logger.info(f"[RSI SAMPLE] RSI min={df['RSI'].min():.1f} max={df['RSI'].max():.1f} mean={df['RSI'].mean():.1f}")
+
+        except Exception as sig_err:
+            logger.error(f"[SIGNAL ERROR] {sig_err}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Signal generation failed: {sig_err}")
+
+        # Warn if zero signals (don't fail, but log it clearly)
+        if buy_condition.sum() == 0:
+            logger.warning(f"[ZERO BUY SIGNALS] No buy signals generated for: '{strategy_rules.buy_condition}'")
+        if sell_condition.sum() == 0:
+            logger.warning(f"[ZERO SELL SIGNALS] No sell signals generated for: '{strategy_rules.sell_condition}'")
+
         
-        except Exception as e:
-            logger.error(f"Parser execution failed: {str(e)}")
-            # Only fallback if it's a parsing error, not a security error
-            if "not allowed" in str(e).lower() or "security" in str(e).lower():
-                raise HTTPException(status_code=400, detail=str(e))
-            
-            # If DSL failed, try Groq as fallback
-            if not is_complex_strategy:
-                logger.warning(f"DSL failed, falling back to Groq LLM parser: {str(e)}")
-                try:
-                    strategy_rules = _parse_strategy(request.strategy_text)
-                    buy_condition, sell_condition = _generate_signals(df, strategy_rules)
-                    logger.info("✅ Using Groq LLM parser (FALLBACK FROM DSL)")
-                except Exception as llm_error:
-                    logger.error(f"Groq parser also failed: {str(llm_error)}")
-                    raise HTTPException(status_code=400, detail=f"Failed to parse strategy: {str(llm_error)}")
-            else:
-                logger.error(f"Groq parser failed: {str(e)}")
-                raise HTTPException(status_code=400, detail=f"Failed to parse strategy: {str(e)}")
         
         # Step 4: Run backtest
         logger.info("Running backtest engine")
@@ -418,16 +396,13 @@ async def get_strategy_examples():
 
 def _parse_strategy(strategy_text: str):
     """
-    Parse strategy text using SimpleStrategyParser.
-    
-    Args:
-        strategy_text: Natural language strategy description
-    
-    Returns:
-        StrategyRules object
+    Parse strategy text, normalizing natural language before parsing.
+    'Enter long' -> 'buy', 'exit' -> 'sell', etc.
     """
+    text = preprocess_strategy_text(strategy_text)
     try:
-        rules = SimpleStrategyParser.parse(strategy_text)
+        rules = SimpleStrategyParser.parse(text)
+        logger.info(f"Parsed strategy: buy='{rules.buy_condition}', sell='{rules.sell_condition}'")
         return rules
     except Exception as e:
         logger.error(f"Strategy parsing failed: {str(e)}")
@@ -437,19 +412,12 @@ def _parse_strategy(strategy_text: str):
 def _generate_signals(df, strategy_rules):
     """
     Generate buy/sell signals from parsed strategy rules.
-    
-    Args:
-        df: DataFrame with indicators
-        strategy_rules: Parsed strategy rules
-    
-    Returns:
-        Tuple of (buy_condition, sell_condition) as boolean Series
+    Uses the robust signal_generator.evaluate_condition function.
     """
     try:
-        # Convert strategy conditions to pandas boolean Series
-        buy_condition = _evaluate_condition(df, strategy_rules.buy_condition)
-        sell_condition = _evaluate_condition(df, strategy_rules.sell_condition)
-        
+        buy_condition = evaluate_condition(df, strategy_rules.buy_condition)
+        sell_condition = evaluate_condition(df, strategy_rules.sell_condition)
+        logger.info(f"Buy signals: {buy_condition.sum()} days | Sell signals: {sell_condition.sum()} days")
         return buy_condition, sell_condition
     except Exception as e:
         logger.error(f"Signal generation failed: {str(e)}")
@@ -458,70 +426,10 @@ def _generate_signals(df, strategy_rules):
 
 def _evaluate_condition(df, condition_text: str):
     """
-    Evaluate a condition string against DataFrame.
-    
-    Args:
-        df: DataFrame with indicators
-        condition_text: Condition string (e.g., "RSI < 30")
-    
-    Returns:
-        Boolean Series
+    Wrapper around signal_generator.evaluate_condition for backward compatibility.
     """
-    if not condition_text:
-        return df.index.to_series().apply(lambda x: False)
-    
-    condition_lower = condition_text.lower().strip()
-    
-    # Handle RSI conditions
-    if 'rsi' in condition_lower:
-        if 'rsi < 30' in condition_lower or 'rsi<30' in condition_lower:
-            return df['RSI'] < 30
-        elif 'rsi > 70' in condition_lower or 'rsi>70' in condition_lower:
-            return df['RSI'] > 70
-        elif 'rsi <' in condition_lower:
-            import re
-            match = re.search(r'rsi\s*<\s*(\d+)', condition_lower)
-            if match:
-                threshold = int(match.group(1))
-                return df['RSI'] < threshold
-        elif 'rsi >' in condition_lower:
-            import re
-            match = re.search(r'rsi\s*>\s*(\d+)', condition_lower)
-            if match:
-                threshold = int(match.group(1))
-                return df['RSI'] > threshold
-    
-    # Handle SMA conditions
-    if 'sma' in condition_lower:
-        if 'sma(50) > sma(200)' in condition_lower or 'sma50 > sma200' in condition_lower:
-            return df['MA50'] > df['MA200']
-        elif 'sma(50) < sma(200)' in condition_lower or 'sma50 < sma200' in condition_lower:
-            return df['MA50'] < df['MA200']
-    
-    # Handle EMA conditions
-    if 'ema' in condition_lower:
-        if 'ema(12) > ema(26)' in condition_lower or 'ema12 > ema26' in condition_lower:
-            return df['EMA12'] > df['EMA26']
-        elif 'ema(12) < ema(26)' in condition_lower or 'ema12 < ema26' in condition_lower:
-            return df['EMA12'] < df['EMA26']
-    
-    # Handle MACD conditions
-    if 'macd' in condition_lower:
-        if 'macd > signal' in condition_lower:
-            return df['MACD'] > df['MACD_Signal']
-        elif 'macd < signal' in condition_lower:
-            return df['MACD'] < df['MACD_Signal']
-    
-    # Handle price conditions
-    if 'price' in condition_lower or 'close' in condition_lower:
-        if 'price > sma(200)' in condition_lower or 'close > sma200' in condition_lower:
-            return df['close'] > df['MA200']
-        elif 'price < sma(200)' in condition_lower or 'close < sma200' in condition_lower:
-            return df['close'] < df['MA200']
-    
-    # Default: no signal
-    logger.warning(f"Could not parse condition: {condition_text}")
-    return df.index.to_series().apply(lambda x: False)
+    return evaluate_condition(df, condition_text)
+
 
 
 @router.post("/backtest/improve-strategy")
