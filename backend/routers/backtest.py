@@ -122,22 +122,50 @@ async def run_backtest(
             # Log DataFrame columns for debugging
             logger.info(f"[DF COLUMNS] {list(df.columns)}")
             logger.info(f"[DF SHAPE] {df.shape}")
-            logger.info(f"[RSI SAMPLE] RSI min={df['RSI'].min():.1f} max={df['RSI'].max():.1f} mean={df['RSI'].mean():.1f}")
+            if 'RSI' in df.columns:
+                logger.info(f"[RSI SAMPLE] RSI min={df['RSI'].min():.1f} max={df['RSI'].max():.1f} mean={df['RSI'].mean():.1f}")
 
         except Exception as sig_err:
             logger.error(f"[SIGNAL ERROR] {sig_err}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Signal generation failed: {sig_err}")
 
-        # Warn if zero signals (don't fail, but log it clearly)
+        # SAFETY FALLBACK: If zero buy signals and strategy has compound conditions,
+        # try simplifying the strategy by removing compound clauses
+        if buy_condition.sum() == 0 and ' and ' in strategy_rules.buy_condition.lower():
+            logger.warning(f"[ZERO BUY SIGNALS] Compound condition produced 0 signals. Attempting simplification...")
+            
+            simplified_text = _simplify_strategy_text(processed_text)
+            logger.info(f"[SIMPLIFIED] Original: '{processed_text}' → Simplified: '{simplified_text}'")
+            
+            if simplified_text:
+                try:
+                    simplified_rules = SimpleStrategyParser.parse(simplified_text)
+                    logger.info(f"[SIMPLIFIED PARSED] buy='{simplified_rules.buy_condition}', sell='{simplified_rules.sell_condition}'")
+                    
+                    if simplified_rules.buy_condition:
+                        simplified_buy = evaluate_condition(df, simplified_rules.buy_condition)
+                        logger.info(f"[SIMPLIFIED] buy signals: {simplified_buy.sum()}")
+                        
+                        if simplified_buy.sum() > 0:
+                            buy_condition = simplified_buy
+                            # Also use simplified sell if available, otherwise keep original
+                            if simplified_rules.sell_condition:
+                                simplified_sell = evaluate_condition(df, simplified_rules.sell_condition)
+                                if simplified_sell.sum() > 0:
+                                    sell_condition = simplified_sell
+                            logger.info(f"[FALLBACK SUCCESS] Using simplified strategy. Buy: {buy_condition.sum()}, Sell: {sell_condition.sum()}")
+                except Exception as simp_err:
+                    logger.warning(f"[SIMPLIFIED FAILED] {simp_err}")
+        
+        # Log final signal counts
         if buy_condition.sum() == 0:
             logger.warning(f"[ZERO BUY SIGNALS] No buy signals generated for: '{strategy_rules.buy_condition}'")
         if sell_condition.sum() == 0:
             logger.warning(f"[ZERO SELL SIGNALS] No sell signals generated for: '{strategy_rules.sell_condition}'")
 
         
-        
         # Step 4: Run backtest
-        logger.info("Running backtest engine")
+        logger.info(f"Running backtest engine with {buy_condition.sum()} buy and {sell_condition.sum()} sell signals")
         engine = BacktestEngine(
             df,
             initial_capital=request.initial_capital,
@@ -398,6 +426,7 @@ def _parse_strategy(strategy_text: str):
     """
     Parse strategy text, normalizing natural language before parsing.
     'Enter long' -> 'buy', 'exit' -> 'sell', etc.
+    Falls back to simplified parsing if compound conditions fail.
     """
     text = preprocess_strategy_text(strategy_text)
     try:
@@ -422,6 +451,46 @@ def _generate_signals(df, strategy_rules):
     except Exception as e:
         logger.error(f"Signal generation failed: {str(e)}")
         raise ValueError(f"Failed to generate signals: {str(e)}")
+
+
+def _simplify_strategy_text(strategy_text: str) -> str:
+    """
+    Simplify a compound strategy into individual indicator conditions.
+    Removes compound clauses that might cause zero signals when combined.
+    
+    For example:
+      "buy when RSI < 30 and price above EMA20" → "buy when RSI < 30"
+    
+    The idea: keep only the primary indicator condition to ensure signals.
+    """
+    import re
+    text = strategy_text.lower()
+    
+    # Try to extract just the first condition from compound buy
+    # Look for "buy when X and Y" → keep just X
+    buy_match = re.search(
+        r'buy\s+(?:when|if)?\s*(.+?)(?:\s+and\s+|\s+or\s+)',
+        text, re.IGNORECASE
+    )
+    sell_match = re.search(
+        r'sell\s+(?:when|if)?\s*(.+?)$',
+        text, re.IGNORECASE
+    )
+    
+    simplified_buy = buy_match.group(1).strip() if buy_match else ''
+    simplified_sell = sell_match.group(1).strip() if sell_match else ''
+    
+    # Clean up punctuation
+    simplified_buy = re.sub(r'[.!?;,]+$', '', simplified_buy).strip()
+    simplified_sell = re.sub(r'[.!?;,]+$', '', simplified_sell).strip()
+    
+    result = ''
+    if simplified_buy:
+        result += f"buy when {simplified_buy}"
+    if simplified_sell:
+        result += f" sell when {simplified_sell}"
+    
+    return result.strip()
 
 
 def _evaluate_condition(df, condition_text: str):

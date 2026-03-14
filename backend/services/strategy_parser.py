@@ -509,12 +509,36 @@ class SimpleStrategyParser:
         """
         text_lower = strategy_text.lower()
         
+        # Normalize sentence delimiters: ". sell" → " sell" to help regex
+        # This handles cases like "buy when X. sell when Y"
+        text_lower = re.sub(r'[.!?;]\s*(sell|buy)', r' \1', text_lower)
+        
+        # Also handle comma-separated: ", sell when" → " sell when"
+        text_lower = re.sub(r',\s*(sell|buy)', r' \1', text_lower)
+        
         # Extract buy and sell conditions
-        buy_match = re.search(r'buy\s+(?:when|if)?\s*(.+?)(?=sell|$)', text_lower, re.IGNORECASE)
-        sell_match = re.search(r'sell\s+(?:when|if)?\s*(.+?)(?=buy|$)', text_lower, re.IGNORECASE)
+        # Use a lookahead that also matches 'and sell' to prevent capturing trailing 'and'
+        buy_match = re.search(
+            r'buy\s+(?:when|if)?\s*(.+?)(?=\s+and\s+sell|\s+sell|$)',
+            text_lower, re.IGNORECASE
+        )
+        sell_match = re.search(
+            r'sell\s+(?:when|if)?\s*(.+?)(?=\s+and\s+buy|\s+buy|$)',
+            text_lower, re.IGNORECASE
+        )
         
         buy_condition = buy_match.group(1).strip() if buy_match else ''
         sell_condition = sell_match.group(1).strip() if sell_match else ''
+        
+        # Strip trailing punctuation from conditions
+        buy_condition = re.sub(r'[.!?;,]+$', '', buy_condition).strip()
+        sell_condition = re.sub(r'[.!?;,]+$', '', sell_condition).strip()
+        
+        # Strip trailing dangling operators ('and', 'or') that got captured
+        buy_condition = re.sub(r'\s+(and|or)\s*$', '', buy_condition, flags=re.IGNORECASE).strip()
+        sell_condition = re.sub(r'\s+(and|or)\s*$', '', sell_condition, flags=re.IGNORECASE).strip()
+        
+        logger.info(f"SimpleStrategyParser: buy='{buy_condition}', sell='{sell_condition}'")
         
         # Extract indicators
         indicators = SimpleStrategyParser._extract_indicators(strategy_text)

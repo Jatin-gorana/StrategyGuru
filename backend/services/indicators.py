@@ -277,7 +277,9 @@ def add_all_indicators(data: pd.DataFrame) -> pd.DataFrame:
     
     # Trend indicators
     df['EMA12'] = calculate_ema(df, period=12)
+    df['EMA20'] = calculate_ema(df, period=20)
     df['EMA26'] = calculate_ema(df, period=26)
+    df['SMA20'] = calculate_ma(df, period=20)
     
     macd, signal, histogram = calculate_macd(df)
     df['MACD'] = macd
